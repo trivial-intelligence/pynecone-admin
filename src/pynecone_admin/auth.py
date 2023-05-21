@@ -78,10 +78,10 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
         class LogonState(State):
             username: str = ""
             password: str = ""
-            error: bool = False
+            error_message: str = ""
 
             def on_submit(self):
-                self.error = False
+                self.error_message = ""
                 with pc.session() as session:
                     user = session.exec(
                         User.select.where(User.username == self.username)
@@ -97,11 +97,14 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                             user = _create_first_admin_user(
                                 session, self.username, self.password
                             )
-                    if user is None or not user.verify(self.password):
-                        self.password = ""
-                        return type(self).set_error(True)
-
-                State._login(self, user.id)
+                if user is not None and user.enabled and user.verify(self.password):
+                    State._login(self, user.id)
+                if user is not None and not user.enabled:
+                    self.password = ""
+                    return type(self).set_error_message("This account is disabled.")
+                if user is None or not user.verify(self.password):
+                    self.password = ""
+                    return type(self).set_error_message("There was a problem logging in, please try again.")
                 self.username = self.password = ""
 
         LOGON_STATE_FOR_STATE[State] = LogonState
@@ -109,8 +112,8 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
 
     return pc.vstack(
         pc.cond(
-            LogonState.error,
-            pc.text("There was a problem logging in, please try again."),
+            LogonState.error_message != "",
+            pc.text(LogonState.error_message),
             pc.box(),
         ),
         pc.form(
