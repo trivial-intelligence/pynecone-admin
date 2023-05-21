@@ -58,7 +58,9 @@ LOGON_STATE_FOR_STATE = {}
 
 
 def _create_first_admin_user(
-    session: sqlmodel.Session, username: str, password: str,
+    session: sqlmodel.Session,
+    username: str,
+    password: str,
 ) -> User:
     user = User()
     user.username = username
@@ -95,7 +97,9 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                             is None
                         ):
                             user = _create_first_admin_user(
-                                session, self.username, self.password
+                                session,
+                                self.username,
+                                self.password,
                             )
                 if user is not None and user.enabled and user.verify(self.password):
                     State._login(self, user.id)
@@ -104,7 +108,9 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                     return type(self).set_error_message("This account is disabled.")
                 if user is None or not user.verify(self.password):
                     self.password = ""
-                    return type(self).set_error_message("There was a problem logging in, please try again.")
+                    return type(self).set_error_message(
+                        "There was a problem logging in, please try again.",
+                    )
                 self.username = self.password = ""
 
         LOGON_STATE_FOR_STATE[State] = LogonState
@@ -125,7 +131,7 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
             pc.password(value=LogonState.password, on_change=LogonState.set_password),
             pc.button("Logon", type_="submit"),
             on_submit=LogonState.on_submit,
-        )
+        ),
     )
 
 

@@ -11,7 +11,10 @@ from .utils import fix_local_event_handlers
 
 
 def add_crud_routes(
-    app: pc.App, objs: t.Sequence[t.Type[pc.Model]], can_access_resource: t.Callable[[pc.State], bool] | None, prefix: str = "/crud"
+    app: pc.App,
+    objs: t.Sequence[t.Type[pc.Model]],
+    can_access_resource: t.Callable[[pc.State], bool] | None,
+    prefix: str = "/crud",
 ):
     PER_MODEL_CRUD_STATES = {}
 
@@ -58,7 +61,9 @@ def add_crud_routes(
         def save_current_obj(self):
             if not can_access_resource(self):
                 return  # no changes unless you are admin
-            hook = getattr(self.current_obj, "__pynecone_admin_save_object_hook__", None)
+            hook = getattr(
+                self.current_obj, "__pynecone_admin_save_object_hook__", None
+            )
             if hook:
                 hook()
             print(f"persist {self.current_obj} to db")
@@ -93,11 +98,21 @@ def add_crud_routes(
         def obj_page(self):
             if not can_access_resource(self):
                 return []  # no viewie
-            if utils.format.format_route(f"{prefix}/{model_clz.__name__}") not in self.get_current_page():
+            if (
+                utils.format.format_route(f"{prefix}/{model_clz.__name__}")
+                not in self.get_current_page()
+            ):
                 return []  # page not active
             print(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
             with pc.session() as session:
-                return [row for row in session.exec(model_clz.select.order_by(model_clz.id.asc()).offset(self.offset).limit(self.page_size))]
+                return [
+                    row
+                    for row in session.exec(
+                        model_clz.select.order_by(model_clz.id.asc())
+                        .offset(self.offset)
+                        .limit(self.page_size)
+                    )
+                ]
 
         def prev_page(self):
             self.offset = self.offset - self.page_size
@@ -135,7 +150,12 @@ def add_crud_routes(
             substate_clz_name,
             (CRUDState,),
             {
-                "__annotations__": {"current_obj": model_clz, "page_size": int, "offset": int, "_trigger_update": float},
+                "__annotations__": {
+                    "current_obj": model_clz,
+                    "page_size": int,
+                    "offset": int,
+                    "_trigger_update": float,
+                },
                 "current_obj": model_clz(),
                 "_trigger_update": 0.0,
                 "offset": 0,
@@ -148,7 +168,10 @@ def add_crud_routes(
         return fix_local_event_handlers(substate_clz)
 
     def substate_for(model_clz: t.Type[pc.Model]) -> t.Type[pc.State]:
-        return PER_MODEL_CRUD_STATES.setdefault(model_clz.__name__, CRUDSubStateFor(model_clz=model_clz))
+        return PER_MODEL_CRUD_STATES.setdefault(
+            model_clz.__name__,
+            CRUDSubStateFor(model_clz=model_clz),
+        )
 
     def create_update_delete(
         model_clz: t.Type[pc.Model],
@@ -220,7 +243,10 @@ def add_crud_routes(
             # the "edit" link
             value = pc.link(
                 value,
-                href="/" + utils.format.format_route(f"{prefix}/{obj.type_.__name__}/") + "/" + obj.id.to_string().to(str),
+                href="/"
+                + utils.format.format_route(f"{prefix}/{obj.type_.__name__}/")
+                + "/"
+                + obj.id.to_string().to(str),
             )
         return pc.td(value)
 
@@ -232,14 +258,19 @@ def add_crud_routes(
                 pc.button("< Prev", is_disabled=True),
             ),
             pc.text("Page Size: "),
-            pc.number_input(input_mode="numeric", value=State.page_size, on_change=State.set_page_size, width="10vw"),
+            pc.number_input(
+                input_mode="numeric",
+                value=State.page_size,
+                on_change=State.set_page_size,
+                width="10vw",
+            ),
             pc.button("✨", on_click=State.redir_to_new),
             pc.button("🔄", on_click=State.refresh),
             pc.cond(
                 State.has_next_results,
                 pc.button("Next >", on_click=State.next_page),
                 pc.button("Next >", is_disabled=True),
-            )
+            ),
         )
 
     def enum(model_clz: t.Type[pc.Model]) -> pc.Component:
@@ -278,7 +309,11 @@ def add_crud_routes(
         def page() -> pc.Component:
             return pc.center(
                 pc.vstack(
-                    pc.hstack(pc.link("All Models", href=prefix), pc.text(">"), pc.heading(model_clz.__name__)),
+                    pc.hstack(
+                        pc.link("All Models", href=prefix),
+                        pc.text(">"),
+                        pc.heading(model_clz.__name__),
+                    ),
                     enum_component,
                 ),
                 padding_top="5%",
@@ -295,13 +330,17 @@ def add_crud_routes(
                 crud_component,
                 padding_top="5%",
             )
+
         return page
 
     def all_models() -> pc.Component:
         return pc.vstack(
             *(
-            pc.link(obj.__name__, href=utils.format.format_route(f"{prefix}/{obj.__name__}"))
-            for obj in objs
+                pc.link(
+                    obj.__name__,
+                    href=utils.format.format_route(f"{prefix}/{obj.__name__}"),
+                )
+                for obj in objs
             ),
             padding_top="5%",
             padding_left="10%",
