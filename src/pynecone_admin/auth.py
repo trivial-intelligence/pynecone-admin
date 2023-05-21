@@ -1,15 +1,11 @@
 import typing as t
 
-from passlib.context import CryptContext
 import pynecone as pc
 import sqlmodel
 
 from .auth_models import AuthSession, User
 from .persistent_token import PersistentToken
 from .utils import add_computed_var, add_event_handler, fix_local_event_handlers
-
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
@@ -62,11 +58,11 @@ LOGON_STATE_FOR_STATE = {}
 
 
 def _create_first_admin_user(
-    session: sqlmodel.Session, username: str, password: str
+    session: sqlmodel.Session, username: str, password: str,
 ) -> User:
     user = User()
     user.username = username
-    user.password_hash = pwd_context.hash(password)
+    user.password_hash = password
     user.enabled = True
     user.admin = True
     session.add(user)
@@ -85,6 +81,7 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
             error: bool = False
 
             def on_submit(self):
+                self.error = False
                 with pc.session() as session:
                     user = session.exec(
                         User.select.where(User.username == self.username)
@@ -100,16 +97,12 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                             user = _create_first_admin_user(
                                 session, self.username, self.password
                             )
-                    if user is None or not pwd_context.verify(
-                        self.password,
-                        user.password_hash,
-                    ):
-                        self.error = True
-                        return
+                    if user is None or not user.verify(self.password):
+                        self.password = ""
+                        return type(self).set_error(True)
 
                 State._login(self, user.id)
                 self.username = self.password = ""
-                self.error = False
 
         LOGON_STATE_FOR_STATE[State] = LogonState
     LogonState = LOGON_STATE_FOR_STATE[State]
@@ -120,13 +113,16 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
             pc.text("There was a problem logging in, please try again."),
             pc.box(),
         ),
-        pc.input(
-            placeholder="username",
-            value=LogonState.username,
-            on_change=LogonState.set_username,
-        ),
-        pc.password(value=LogonState.password, on_change=LogonState.set_password),
-        pc.button("Logon", on_click=LogonState.on_submit),
+        pc.form(
+            pc.input(
+                placeholder="username",
+                value=LogonState.username,
+                on_change=LogonState.set_username,
+            ),
+            pc.password(value=LogonState.password, on_change=LogonState.set_password),
+            pc.button("Logon", type_="submit"),
+            on_submit=LogonState.on_submit,
+        )
     )
 
 
