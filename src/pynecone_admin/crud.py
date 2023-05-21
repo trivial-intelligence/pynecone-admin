@@ -7,7 +7,7 @@ import pynecone as pc
 from pynecone import utils
 
 from .auth import login_required
-from .utils import fix_local_event_handlers
+from .utils import debounce_input, fix_local_event_handlers
 
 
 def add_crud_routes(
@@ -71,7 +71,6 @@ def add_crud_routes(
                 session.add(self.current_obj)
                 session.commit()
                 session.refresh(self.current_obj)
-            self._trigger_update = time.time()
             return pc.redirect(self.get_current_page().rpartition("/")[0])
 
         def delete_current_obj(self):
@@ -82,7 +81,6 @@ def add_crud_routes(
                 with pc.session() as session:
                     session.delete(self.current_obj)
                     session.commit()
-                self._trigger_update = time.time()
             return pc.redirect(self.get_current_page().rpartition("/")[0])
 
         def reset(self):
@@ -186,7 +184,11 @@ def add_crud_routes(
             )
             if field.type_ == str:
                 controls.append(
-                    pc.input(placeholder=field_name, value=value, on_change=on_change)
+                    debounce_input(
+                        pc.input(
+                            placeholder=field_name, value=value, on_change=on_change
+                        )
+                    )
                 )
             elif field_name == "id":
                 controls.append(

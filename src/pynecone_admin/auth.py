@@ -5,7 +5,12 @@ import sqlmodel
 
 from .auth_models import AuthSession, User
 from .persistent_token import PersistentToken
-from .utils import add_computed_var, add_event_handler, fix_local_event_handlers
+from .utils import (
+    add_computed_var,
+    add_event_handler,
+    debounce_input,
+    fix_local_event_handlers,
+)
 
 
 def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
@@ -123,12 +128,20 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
             pc.box(),
         ),
         pc.form(
-            pc.input(
-                placeholder="username",
-                value=LogonState.username,
-                on_change=LogonState.set_username,
+            debounce_input(
+                pc.input(
+                    placeholder="username",
+                    value=LogonState.username,
+                    on_change=LogonState.set_username,
+                ),
             ),
-            pc.password(value=LogonState.password, on_change=LogonState.set_password),
+            debounce_input(
+                pc.password(
+                    placeholder="password",
+                    value=LogonState.password,
+                    on_change=LogonState.set_password,
+                ),
+            ),
             pc.button("Logon", type_="submit"),
             on_submit=LogonState.on_submit,
         ),

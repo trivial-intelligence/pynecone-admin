@@ -2,6 +2,7 @@
 import typing as t
 
 import pynecone as pc
+import pynecone_debounce_input
 
 
 def fix_local_event_handlers(State: t.Type[pc.State]) -> t.Type[pc.State]:
@@ -68,3 +69,7 @@ def add_event_handler(State: t.Type[pc.State]):
         return func
 
     return dec
+
+
+def debounce_input(*args, **kwargs) -> pc.Component:
+    return pynecone_debounce_input.debounce_input(*args, **kwargs)
