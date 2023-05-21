@@ -96,7 +96,7 @@ def add_crud_routes(
             self._trigger_update = time.time()
 
         def obj_page(self):
-            if not can_access_resource(self):
+            if self.authenticated_user_id < 0 or not can_access_resource(self):
                 return []  # no viewie
             if (
                 utils.format.format_route(f"{prefix}/{model_clz.__name__}")
