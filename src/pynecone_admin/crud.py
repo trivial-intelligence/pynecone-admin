@@ -4,6 +4,7 @@ import logging
 import time
 import typing as t
 
+import pydantic
 import pynecone as pc
 from pynecone import utils
 
@@ -14,19 +15,79 @@ from .utils import debounce_input, fix_local_event_handlers
 logger = logging.getLogger(__name__)
 
 
+class FormComponent(t.Protocol):
+    def __call__(self, *children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+        ...
+
+
+def default_form_component(*children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    return pc.form(*children, on_submit=on_submit, **kwargs)
+
+
+class FieldComponent(t.Protocol):
+    def __call__(self, field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+        ...
+
+
+def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    if field.type_ == str:
+        return debounce_input(
+            pc.input(
+                placeholder=field.name, value=value, on_change=on_change, **kwargs,
+            )
+        )
+    if field.name == "id":
+        return pc.cond(
+            value,
+            pc.input(
+                is_read_only=True,
+                value=value.to_string().to(str),
+                **kwargs,
+            ),
+            pc.input(
+                is_read_only=True,
+                value="(new)",
+                **kwargs,
+            ),
+        )
+    if field.type_ == bool:
+        return pc.checkbox(
+            field.name,
+            is_checked=value,
+            on_change=on_change,
+            **kwargs,
+        )
+    if field.type_ in [int, float]:
+        return pc.number_input(
+            input_mode="numeric",
+            value=value | 0,
+            on_change=on_change,
+            **kwargs,
+        )
+    return pc.text(f"Unsupported field: {field.name} ({field.type_})", **kwargs)
+
+
 def add_crud_routes(
     app: pc.App,
     objs: t.Sequence[t.Type[pc.Model]],
-    can_access_resource: t.Callable[[pc.State], bool] | None,
+    form_component: FormComponent | None = None,
+    field_component: FieldComponent | None = None,
+    can_access_resource: t.Callable[[pc.State], bool] | None = None,
     prefix: str = "/crud",
 ):
+    if form_component is None:
+        form_component = default_form_component
+    if field_component is None:
+        field_component = default_field_component
+    if can_access_resource is None:
+        # if the user does not provide access control, allow all
+        def can_access_resource(_):
+            return True
+
     PER_MODEL_CRUD_STATES = {}
 
     class CRUDState(app.state):
         pass
-
-    # if the user does not provide access control, allow all
-    can_access_resource = can_access_resource or (lambda _: True)
 
     def CRUDSubStateFor(model_clz: t.Type[pc.Model]) -> t.Type[pc.State]:
         def set_subfield(self, field_name, value):
@@ -54,7 +115,6 @@ def add_crud_routes(
                 except ValueError:
                     self.reset()
                     return
-                breakpoint()
                 with pc.session() as session:
                     self.current_obj = session.exec(
                         model_clz.select.where(model_clz.id == obj_id)
@@ -186,48 +246,7 @@ def add_crud_routes(
                 field_name,
                 v,
             )
-            if field.type_ == str:
-                controls.append(
-                    debounce_input(
-                        pc.input(
-                            placeholder=field_name, value=value, on_change=on_change
-                        )
-                    )
-                )
-            elif field_name == "id":
-                controls.append(
-                    pc.cond(
-                        value,
-                        pc.input(
-                            is_read_only=True,
-                            value=value.to_string().to(str),
-                        ),
-                        pc.input(
-                            is_read_only=True,
-                            value="(new)",
-                        ),
-                    )
-                )
-            elif field.type_ == bool:
-                controls.append(
-                    pc.checkbox(
-                        field_name,
-                        is_checked=value,
-                        on_change=on_change,
-                    ),
-                )
-            elif field.type_ in [int, float]:
-                controls.append(
-                    pc.number_input(
-                        input_mode="numeric",
-                        value=value | 0,
-                        on_change=on_change,
-                    ),
-                )
-            else:
-                controls.append(
-                    pc.text(f"Unsupported field: {field_name} ({field.type_})")
-                )
+            controls.append(field_component(field, value, on_change))
 
         if controls:
             controls.append(
@@ -237,7 +256,7 @@ def add_crud_routes(
                     pc.button("Delete", on_click=SubState.delete_current_obj),
                 ),
             )
-        return pc.vstack(pc.form(*controls, on_submit=SubState.save_current_obj))
+        return form_component(*controls, on_submit=SubState.save_current_obj)
 
     def format_cell(obj, col) -> pc.Td:
         value = getattr(obj, col)
