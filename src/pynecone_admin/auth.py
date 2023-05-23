@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import logging
 import typing as t
 
 import pynecone as pc
@@ -13,11 +16,20 @@ from .utils import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     if getattr(State, "persistent_token", None) is not None:
         return State
 
     State.add_var("persistent_token", type_=str, default_value="")
+
+    @add_event_handler(State)
+    def set_persistent_token(self, persistent_token):
+        if self.persistent_token != persistent_token:
+            # only re-assign if the new value is different
+            self.persistent_token = persistent_token
 
     def _login(self, user_id: int):
         if self.authenticated_user_id > 0:
@@ -74,7 +86,7 @@ def _create_first_admin_user(
     user.admin = True
     session.add(user)
     session.commit()
-    print(f"Created first new admin user: {username}")
+    logger.warning(f"Created first new admin user: {username}")
     return user
 
 

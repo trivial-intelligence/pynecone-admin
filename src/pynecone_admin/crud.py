@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 import typing as t
 
@@ -8,6 +9,9 @@ from pynecone import utils
 
 from .auth import login_required
 from .utils import debounce_input, fix_local_event_handlers
+
+
+logger = logging.getLogger(__name__)
 
 
 def add_crud_routes(
@@ -34,7 +38,7 @@ def add_crud_routes(
                     value = field.type_(value)
                 except ValueError:
                     return
-            print(f"set_subfield({model_clz.__name__}) {field_name}={value}")
+            logger.debug(f"set_subfield({model_clz.__name__}) {field_name}={value}")
             setattr(self.current_obj, field_name, value)
             # re-assign to parent attribute
             self.current_obj = self.current_obj
@@ -42,20 +46,23 @@ def add_crud_routes(
         def load_current_obj(self):
             if not can_access_resource(self):
                 return  # no changes unless you are admin
+            logger.debug("load_current_obj dirty_vars: %s", getattr(self, "dirty_vars"))
+            logger.debug(getattr(self, "router_data"))
             if self.obj_id is not None:
                 try:
                     obj_id = int(self.obj_id)
                 except ValueError:
                     self.reset()
                     return
+                breakpoint()
                 with pc.session() as session:
                     self.current_obj = session.exec(
                         model_clz.select.where(model_clz.id == obj_id)
                     ).one_or_none()
                     if self.current_obj is not None:
-                        print(f"load {obj_id}: {self.current_obj}")
+                        logger.debug(f"load {obj_id}: {self.current_obj}")
                     else:
-                        print(f"{obj_id} is not found")
+                        logging.info(f"{obj_id} is not found")
                         self.reset()
 
         def save_current_obj(self):
@@ -66,7 +73,7 @@ def add_crud_routes(
             )
             if hook:
                 hook()
-            print(f"persist {self.current_obj} to db")
+            logger.info(f"persist {self.current_obj} to db")
             with pc.session() as session:
                 session.add(self.current_obj)
                 session.commit()
@@ -77,7 +84,7 @@ def add_crud_routes(
             if not can_access_resource(self):
                 return  # no changes unless you are admin
             if self.current_obj.id is not None:
-                print(f"delete {self.current_obj} from db")
+                logger.info(f"delete {self.current_obj} from db")
                 with pc.session() as session:
                     session.delete(self.current_obj)
                     session.commit()
@@ -96,12 +103,9 @@ def add_crud_routes(
         def obj_page(self):
             if self.authenticated_user_id < 0 or not can_access_resource(self):
                 return []  # no viewie
-            if (
-                utils.format.format_route(f"{prefix}/{model_clz.__name__}")
-                not in self.get_current_page()
-            ):
-                return []  # page not active
-            print(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
+            if self.get_current_page() != "/" + utils.format.format_route(f"{prefix}/{model_clz.__name__}"):
+                return []  # page/table not active
+            logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
             with pc.session() as session:
                 return [
                     row
@@ -235,13 +239,11 @@ def add_crud_routes(
             )
         return pc.vstack(pc.form(*controls, on_submit=SubState.save_current_obj))
 
-    def format_cell(
-        obj, col, set_current_obj_by_id: pc.event.EventHandler | None = None
-    ) -> pc.Td:
+    def format_cell(obj, col) -> pc.Td:
         value = getattr(obj, col)
         if value.type_ == bool:
             value = pc.cond(value, "✅", "❌")
-        if col == "id" and set_current_obj_by_id is not None:
+        if col == "id":
             # the "edit" link
             value = pc.link(
                 value,
@@ -292,7 +294,6 @@ def add_crud_routes(
                                     format_cell(
                                         obj=u,
                                         col=col,
-                                        set_current_obj_by_id=SubState.load_current_obj,
                                     )
                                     for col in model_clz.__fields__
                                 ]
