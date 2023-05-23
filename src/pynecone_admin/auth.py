@@ -130,10 +130,14 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
     LogonState = LOGON_STATE_FOR_STATE[State]
 
     return pc.vstack(
-        pc.cond(
+        pc.cond(  # conditionally show error messages
             LogonState.error_message != "",
             pc.text(LogonState.error_message),
-            pc.box(),
+            pc.cond(
+                LogonState.is_hydrated == False,
+                pc.text("Not Connected to Backend ... Check Internet Connectivity"),
+                pc.box(),
+            )
         ),
         pc.form(
             debounce_input(
