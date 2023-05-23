@@ -307,7 +307,7 @@ def add_crud_routes(
 
     def enum(model_clz: t.Type[pc.Model]) -> pc.Component:
         SubState = substate_for(model_clz)
-        return pc.vstack(
+        return pc.fragment(
             pagination_controls(SubState),
             pc.table_container(
                 pc.table(
@@ -338,16 +338,14 @@ def add_crud_routes(
 
         @login_required(State=app.state)
         def page() -> pc.Component:
-            return pc.center(
-                pc.vstack(
-                    pc.hstack(
-                        pc.link("All Models", href=prefix),
-                        pc.text(">"),
-                        pc.heading(model_clz.__name__),
-                    ),
-                    enum_component,
+            return pc.vstack(
+                pc.hstack(
+                    pc.link("All Models", href=prefix),
+                    pc.text(">"),
+                    pc.heading(model_clz.__name__),
                 ),
-                padding_top="5%",
+                enum_component,
+                align_items="flex-start",
             )
 
         return page
@@ -374,7 +372,6 @@ def add_crud_routes(
                 for obj in objs
             ),
             padding_top="5%",
-            padding_left="10%",
         )
 
     for obj in objs:

@@ -174,13 +174,13 @@ def login_required(
         login_component = default_logon_component
 
     def comp(original_component) -> pc.Component:
-        return pc.box(
+        return pc.fragment(
             PersistentToken.create(on_change=State.set_persistent_token),
             pc.cond(
                 State.authenticated_user_id > 0,
-                pc.vstack(
+                pc.fragment(
                     original_component(),
-                    pc.button("Logout", on_click=State.do_logout),
+                    pc.center(pc.button("Logout", on_click=State.do_logout)),
                 ),
                 login_component(State),
             ),
