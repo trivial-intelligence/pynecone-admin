@@ -107,18 +107,14 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                     ).one_or_none()
                     if user is None:
                         # if this is the first time logging in, create the user and make them admin
-                        if (
-                            session.exec(
-                                User.select.limit(1),
-                            ).one_or_none()
-                            is None
-                        ):
+                        if session.exec(User.select.limit(1)).one_or_none() is None:
                             user = _create_first_admin_user(
                                 session,
                                 self.username,
                                 self.password,
                             )
                 if user is not None and user.enabled and user.verify(self.password):
+                    # mark the user as logged in
                     State._login(self, user.id)
                 if user is not None and not user.enabled:
                     self.password = ""
