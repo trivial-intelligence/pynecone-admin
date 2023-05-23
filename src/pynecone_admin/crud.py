@@ -31,23 +31,29 @@ class FieldComponent(t.Protocol):
 
 def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
     if field.type_ == str:
-        return debounce_input(
-            pc.input(
-                placeholder=field.name, value=value, on_change=on_change, **kwargs,
-            )
+        return pc.form_control(
+            pc.form_label(field.name),
+            debounce_input(
+                pc.input(
+                    placeholder=field.name, value=value, on_change=on_change, **kwargs,
+                )
+            ),
         )
     if field.name == "id":
-        return pc.cond(
-            value,
-            pc.input(
-                is_read_only=True,
-                value=value.to_string().to(str),
-                **kwargs,
-            ),
-            pc.input(
-                is_read_only=True,
-                value="(new)",
-                **kwargs,
+        return pc.form_control(
+            pc.form_label(field.name),
+            pc.cond(
+                value,
+                pc.input(
+                    is_read_only=True,
+                    value=value.to_string().to(str),
+                    **kwargs,
+                ),
+                pc.input(
+                    is_read_only=True,
+                    value="(new)",
+                    **kwargs,
+                ),
             ),
         )
     if field.type_ == bool:
@@ -58,11 +64,14 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             **kwargs,
         )
     if field.type_ in [int, float]:
-        return pc.number_input(
-            input_mode="numeric",
-            value=value | 0,
-            on_change=on_change,
-            **kwargs,
+        return pc.form_control(
+            pc.form_label(field.name + f" ({field.type_.__name__})"),
+            pc.number_input(
+                input_mode="numeric",
+                value=value | 0,
+                on_change=on_change,
+                **kwargs,
+            ),
         )
     return pc.text(f"Unsupported field: {field.name} ({field.type_})", **kwargs)
 
