@@ -126,9 +126,15 @@ def add_crud_routes(
                     self.reset()
                     return
                 with pc.session() as session:
-                    self.current_obj = session.exec(
-                        model_clz.select.where(model_clz.id == obj_id)
-                    ).one_or_none()
+                    try:
+                        self.current_obj = session.exec(
+                            model_clz.select.where(model_clz.id == obj_id)
+                        ).one_or_none()
+                    except Exception as exc:
+                        self.db_error = str(exc)
+                        return
+                    else:
+                        self.db_error = ""
                     if self.current_obj is not None:
                         logger.debug(f"load {obj_id}: {self.current_obj}")
                     else:
@@ -145,10 +151,14 @@ def add_crud_routes(
                 hook()
             logger.info(f"persist {self.current_obj} to db")
             with pc.session() as session:
-                session.add(self.current_obj)
-                session.commit()
-                session.refresh(self.current_obj)
-            return self.redirect_back_to_table()
+                try:
+                    session.add(self.current_obj)
+                    session.commit()
+                    session.refresh(self.current_obj)
+                except Exception as exc:
+                    self.db_error = str(exc)
+                    return
+            return self.reset()
 
         def delete_current_obj(self):
             if not can_access_resource(self):
@@ -156,12 +166,17 @@ def add_crud_routes(
             if self.current_obj.id is not None:
                 logger.info(f"delete {self.current_obj} from db")
                 with pc.session() as session:
-                    session.delete(self.current_obj)
-                    session.commit()
-            return self.redirect_back_to_table()
+                    try:
+                        session.delete(self.current_obj)
+                        session.commit()
+                    except Exception as exc:
+                        self.db_error = str(exc)
+                        return
+            return self.reset()
 
         def reset(self):
             self.current_obj = model_clz()
+            self.db_error = ""
             return self.redirect_back_to_table()
 
         def redir_to_new(self):
@@ -248,10 +263,13 @@ def add_crud_routes(
                 "__annotations__": {
                     "current_obj": model_clz,
                     "_trigger_update": float,
+                    "_page_params": dict[str, t.Any],
+                    "db_error": str,
                 },
                 "current_obj": model_clz(),
                 "_trigger_update": 0.0,
                 "_page_params": {},
+                "db_error": "",
                 "offset": pc.cached_var(offset),
                 "page_size": pc.cached_var(page_size),
                 "obj_page": pc.cached_var(obj_page),
@@ -292,7 +310,11 @@ def add_crud_routes(
                     pc.button("Delete", on_click=SubState.delete_current_obj),
                 ),
             )
-        return form_component(*controls, on_submit=SubState.save_current_obj)
+        return form_component(
+            pc.text(SubState.db_error, width="50vw"),
+            *controls,
+            on_submit=SubState.save_current_obj,
+        )
 
     def format_cell(obj, col) -> pc.Td:
         value = pc.vars.BaseVar(
