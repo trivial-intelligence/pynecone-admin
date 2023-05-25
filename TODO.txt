@@ -1,0 +1,6 @@
+Pass database errors back to client
+Search / filter tables
+
+Auto-focus fields when loading forms
+
+CSV export / import

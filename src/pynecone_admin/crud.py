@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import typing as t
+import urllib.parse
 
 import pydantic
 import pynecone as pc
@@ -147,7 +148,7 @@ def add_crud_routes(
                 session.add(self.current_obj)
                 session.commit()
                 session.refresh(self.current_obj)
-            return pc.redirect(self.get_current_page().rpartition("/")[0])
+            return self.redirect_back_to_table()
 
         def delete_current_obj(self):
             if not can_access_resource(self):
@@ -157,11 +158,11 @@ def add_crud_routes(
                 with pc.session() as session:
                     session.delete(self.current_obj)
                     session.commit()
-            return pc.redirect(self.get_current_page().rpartition("/")[0])
+            return self.redirect_back_to_table()
 
         def reset(self):
             self.current_obj = model_clz()
-            return pc.redirect(self.get_current_page().rpartition("/")[0])
+            return self.redirect_back_to_table()
 
         def redir_to_new(self):
             return pc.redirect(self.get_current_page() + "/new")
@@ -169,11 +170,18 @@ def add_crud_routes(
         def refresh(self):
             self._trigger_update = time.time()
 
+        def offset(self) -> int:
+            return int(self.get_query_params().get("offset", 0))
+
+        def page_size(self) -> int:
+            return int(self.get_query_params().get("page_size", 10))
+
         def obj_page(self):
             if self.authenticated_user_id < 0 or not can_access_resource(self):
                 return []  # no viewie
             if self.get_current_page() != "/" + utils.format.format_route(f"{prefix}/{model_clz.__name__}"):
                 return []  # page/table not active
+            self._page_params = self.get_query_params()  # cache these to redirect after editing
             logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
             with pc.session() as session:
                 return [
@@ -185,17 +193,31 @@ def add_crud_routes(
                     )
                 ]
 
+        def redirect_back_to_table(self):
+            return self.redirect_with_params(
+                url=self.get_current_page().rpartition("/")[0],
+                **self._page_params,
+            )
+
+        def redirect_with_params(self, url=None, **params):
+            if url is None:
+                url = self.get_current_page()
+            query_params = self.get_query_params()
+            query_params.update(params)
+            return pc.redirect(url + "?" + "&".join("{}={}".format(k, urllib.parse.quote(str(v))) for k, v in query_params.items()))
+
         def prev_page(self):
-            self.offset = self.offset - self.page_size
-            if self.offset < 0:
-                self.offset = 0
+            offset = self.offset - self.page_size
+            if offset < 0:
+                offset = 0
+            return self.redirect_with_params(offset=offset)
 
         def next_page(self):
-            self.offset = self.offset + self.page_size
+            return self.redirect_with_params(offset=self.offset + self.page_size)
 
         def set_page_size(self, v: str):
             try:
-                self.page_size = int(v)
+                return self.redirect_with_params(page_size=int(v))
             except ValueError:
                 pass
 
@@ -212,6 +234,8 @@ def add_crud_routes(
             reset,
             redir_to_new,
             refresh,
+            redirect_back_to_table,
+            redirect_with_params,
             prev_page,
             next_page,
             set_page_size,
@@ -223,14 +247,13 @@ def add_crud_routes(
             {
                 "__annotations__": {
                     "current_obj": model_clz,
-                    "page_size": int,
-                    "offset": int,
                     "_trigger_update": float,
                 },
                 "current_obj": model_clz(),
                 "_trigger_update": 0.0,
-                "offset": 0,
-                "page_size": 10,
+                "_page_params": {},
+                "offset": pc.cached_var(offset),
+                "page_size": pc.cached_var(page_size),
                 "obj_page": pc.cached_var(obj_page),
                 "has_next_results": pc.cached_var(has_next_results),
                 **{handler.__name__: handler for handler in event_handlers},
