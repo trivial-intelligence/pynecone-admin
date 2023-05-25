@@ -250,7 +250,11 @@ def add_crud_routes(
         SubState = substate_for(model_clz)
         controls = []
         for field_name, field in model_clz.__fields__.items():
-            value = getattr(SubState.current_obj, field_name)
+            value = pc.vars.BaseVar(
+                name=f"{SubState.current_obj.name}.{field_name}",
+                type_=field.type_,
+                state=SubState.current_obj.state,
+            )
             on_change = lambda v: getattr(SubState, "set_subfield")(
                 field_name,
                 v,
@@ -268,7 +272,11 @@ def add_crud_routes(
         return form_component(*controls, on_submit=SubState.save_current_obj)
 
     def format_cell(obj, col) -> pc.Td:
-        value = getattr(obj, col)
+        value = pc.vars.BaseVar(
+            name=f"{obj.name}.{col}",
+            type_=obj.type_.__fields__[col].type_,
+            state=obj.state,
+        )
         if value.type_ == bool:
             value = pc.cond(value, "✅", "❌")
         if col == "id":
