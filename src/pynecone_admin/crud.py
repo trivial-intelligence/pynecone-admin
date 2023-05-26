@@ -235,15 +235,19 @@ def add_crud_routes(
                 if _hook:
                     _hook()
                 return row
+            def filter_hook(filter_value):
+                _hook = getattr(model_clz, "__pynecone_admin_filter_where_hook__", None)
+                if _hook is not None:
+                    return _hook(filter_value)
+                # default implementation just slowly scans every column
+                return or_(
+                    col(getattr(model_clz, field_name)).cast(sqlalchemy.String).ilike(f"%{filter_value}%")
+                    for field_name in model_clz.__fields__
+                )
             with pc.session() as session:
                 select_stmt = model_clz.select
                 if self.filter_value != "":
-                    select_stmt = select_stmt.where(
-                        or_(
-                                col(getattr(model_clz, field_name)).cast(sqlalchemy.String).ilike(f"%{self.filter_value}%")
-                                for field_name in model_clz.__fields__
-                        )
-                    )
+                    select_stmt = select_stmt.where(filter_hook(self.filter_value))
                 return [
                     hook(row)
                     for row in session.exec(
