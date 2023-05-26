@@ -117,8 +117,6 @@ def add_crud_routes(
         def load_current_obj(self):
             if not can_access_resource(self):
                 return  # no changes unless you are admin
-            logger.debug("load_current_obj dirty_vars: %s", getattr(self, "dirty_vars"))
-            logger.debug(getattr(self, "router_data"))
             if self.obj_id is not None:
                 try:
                     obj_id = int(self.obj_id)
@@ -136,6 +134,11 @@ def add_crud_routes(
                     else:
                         self.db_error = ""
                     if self.current_obj is not None:
+                        hook = getattr(
+                            self.current_obj, "__pynecone_admin_load_object_hook__", None
+                        )
+                        if hook:
+                            hook()
                         logger.debug(f"load {obj_id}: {self.current_obj}")
                     else:
                         logging.info(f"{obj_id} is not found")
@@ -164,6 +167,11 @@ def add_crud_routes(
             if not can_access_resource(self):
                 return  # no changes unless you are admin
             if self.current_obj.id is not None:
+                hook = getattr(
+                    self.current_obj, "__pynecone_admin_delete_object_hook__", None
+                )
+                if hook:
+                    hook()
                 logger.info(f"delete {self.current_obj} from db")
                 with pc.session() as session:
                     try:
@@ -198,9 +206,14 @@ def add_crud_routes(
                 return []  # page/table not active
             self._page_params = self.get_query_params()  # cache these to redirect after editing
             logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
+            def hook(row):
+                _hook = getattr(row, "__pynecone_admin_load_row_hook__", None)
+                if _hook:
+                    _hook()
+                return row
             with pc.session() as session:
                 return [
-                    row
+                    hook(row)
                     for row in session.exec(
                         model_clz.select.order_by(model_clz.id.asc())
                         .offset(self.offset)
