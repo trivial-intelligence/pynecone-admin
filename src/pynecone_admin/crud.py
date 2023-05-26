@@ -8,12 +8,21 @@ import urllib.parse
 import pydantic
 import pynecone as pc
 from pynecone import utils
+import sqlalchemy
+from sqlmodel import col, or_
 
 from .auth import login_required
 from .utils import debounce_input, fix_local_event_handlers
 
 
 logger = logging.getLogger(__name__)
+
+
+QUERY_PARAM_DEFAULTS = {
+    "page_size": 10,
+    "offset": 0,
+    "filter": "",
+}
 
 
 class FormComponent(t.Protocol):
@@ -75,6 +84,18 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             ),
         )
     return pc.text(f"Unsupported field: {field.name} ({field.type_})", **kwargs)
+
+
+def format_query_string(params: dict[str, t.Any]) -> str:
+    """Convert query params to router string
+
+    Args:
+        params: the query_params from router_data
+
+    Returns:
+        The query string
+    """
+    return urllib.parse.urlencode({k.replace("_", "-"): v for k, v in params.items()})
 
 
 def add_crud_routes(
@@ -142,7 +163,7 @@ def add_crud_routes(
                         logger.debug(f"load {obj_id}: {self.current_obj}")
                     else:
                         logging.info(f"{obj_id} is not found")
-                        self.reset()
+                        return self.redirect_back_to_table()
 
         def save_current_obj(self):
             if not can_access_resource(self):
@@ -161,7 +182,7 @@ def add_crud_routes(
                 except Exception as exc:
                     self.db_error = str(exc)
                     return
-            return self.reset()
+            return self.redirect_back_to_table()
 
         def delete_current_obj(self):
             if not can_access_resource(self):
@@ -180,24 +201,27 @@ def add_crud_routes(
                     except Exception as exc:
                         self.db_error = str(exc)
                         return
-            return self.reset()
+            return self.redirect_back_to_table()
 
         def reset(self):
             self.current_obj = model_clz()
             self.db_error = ""
-            return self.redirect_back_to_table()
 
         def redir_to_new(self):
             return pc.redirect(self.get_current_page() + "/new")
 
         def refresh(self):
+            breakpoint()
             self._trigger_update = time.time()
 
         def offset(self) -> int:
-            return int(self.get_query_params().get("offset", 0))
+            return int(self.get_query_params().get("offset", QUERY_PARAM_DEFAULTS["offset"]))
 
         def page_size(self) -> int:
-            return int(self.get_query_params().get("page_size", 10))
+            return int(self.get_query_params().get("page_size", QUERY_PARAM_DEFAULTS["page_size"]))
+
+        def filter_value(self) -> str:
+            return self.get_query_params().get("filter", QUERY_PARAM_DEFAULTS["filter"])
 
         def obj_page(self):
             if self.authenticated_user_id < 0 or not can_access_resource(self):
@@ -205,23 +229,34 @@ def add_crud_routes(
             if self.get_current_page() != "/" + utils.format.format_route(f"{prefix}/{model_clz.__name__}"):
                 return []  # page/table not active
             self._page_params = self.get_query_params()  # cache these to redirect after editing
-            logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size}")
+            logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size} {self.filter_value}")
             def hook(row):
                 _hook = getattr(row, "__pynecone_admin_load_row_hook__", None)
                 if _hook:
                     _hook()
                 return row
             with pc.session() as session:
+                select_stmt = model_clz.select
+                if self.filter_value != "":
+                    select_stmt = select_stmt.where(
+                        or_(
+                                col(getattr(model_clz, field_name)).cast(sqlalchemy.String).ilike(f"%{self.filter_value}%")
+                                for field_name in model_clz.__fields__
+                        )
+                    )
                 return [
                     hook(row)
                     for row in session.exec(
-                        model_clz.select.order_by(model_clz.id.asc())
+                        select_stmt.order_by(model_clz.id.asc())
                         .offset(self.offset)
                         .limit(self.page_size)
                     )
                 ]
 
         def redirect_back_to_table(self):
+            self.reset()
+            # do NOT carry obj_id back to the table
+            self.get_query_params().pop("obj_id", None)
             return self.redirect_with_params(
                 url=self.get_current_page().rpartition("/")[0],
                 **self._page_params,
@@ -230,9 +265,19 @@ def add_crud_routes(
         def redirect_with_params(self, url=None, **params):
             if url is None:
                 url = self.get_current_page()
-            query_params = self.get_query_params()
+            # copy the query_params, so that new hydrate event has a delta,
+            # otherwise we update the actual dict here, and the redirect doesn't
+            # trigger reassignment to router_data, since the value has no change
+            query_params = self.get_query_params().copy()
             query_params.update(params)
-            return pc.redirect(url + "?" + "&".join("{}={}".format(k, urllib.parse.quote(str(v))) for k, v in query_params.items()))
+            for param, default_value in QUERY_PARAM_DEFAULTS.items():
+                # clean up URL by removing default values
+                if query_params.get(param) == default_value:
+                    query_params.pop(param, None)
+            if query_params:
+                url = url + "?{}".format(format_query_string(query_params))
+            logger.debug(f"Redirect to {url}")
+            return pc.redirect(url)
 
         def prev_page(self):
             offset = self.offset - self.page_size
@@ -248,6 +293,9 @@ def add_crud_routes(
                 return self.redirect_with_params(page_size=int(v))
             except ValueError:
                 pass
+
+        def set_filter_value(self, v: str):
+            return self.redirect_with_params(filter=v, offset=0)
 
         def has_next_results(self) -> bool:
             return len(self.obj_page) == self.page_size
@@ -267,6 +315,7 @@ def add_crud_routes(
             prev_page,
             next_page,
             set_page_size,
+            set_filter_value,
         )
         substate_clz_name = f"CRUDSubStateFor{model_clz.__name__}"
         substate_clz = type(
@@ -283,6 +332,7 @@ def add_crud_routes(
                 "_trigger_update": 0.0,
                 "_page_params": {},
                 "db_error": "",
+                "filter_value": pc.cached_var(filter_value),
                 "offset": pc.cached_var(offset),
                 "page_size": pc.cached_var(page_size),
                 "obj_page": pc.cached_var(obj_page),
@@ -319,7 +369,7 @@ def add_crud_routes(
             controls.append(
                 pc.hstack(
                     pc.button("Save", type_="submit"),
-                    pc.button("Discard", on_click=SubState.reset),
+                    pc.button("Discard", on_click=SubState.redirect_back_to_table),
                     pc.button("Delete", on_click=SubState.delete_current_obj),
                 ),
             )
@@ -374,6 +424,10 @@ def add_crud_routes(
     def enum(model_clz: t.Type[pc.Model]) -> pc.Component:
         SubState = substate_for(model_clz)
         return pc.fragment(
+            debounce_input(
+                pc.input(placeholder="filter", value=SubState.filter_value, on_change=SubState.set_filter_value),
+                debounce_timeout=500,
+            ),
             pagination_controls(SubState),
             pc.table_container(
                 pc.table(

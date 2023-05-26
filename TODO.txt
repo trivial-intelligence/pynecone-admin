@@ -1,4 +1,3 @@
-Search / filter tables
 Show columns
 
 Auto-focus fields when loading forms
