@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import time
 import typing as t
@@ -46,6 +47,15 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             debounce_input(
                 pc.input(
                     placeholder=field.name, value=value, on_change=on_change, **kwargs,
+                )
+            ),
+        )
+    if field.type_ == datetime.datetime:
+        return pc.form_control(
+            pc.form_label(field.name),
+            debounce_input(
+                pc.input(
+                    type_="datetime-local", placeholder=field.name, value=value.to(str), on_change=on_change, **kwargs,
                 )
             ),
         )
@@ -128,6 +138,11 @@ def add_crud_routes(
             if field.type_ in [int, float]:
                 try:
                     value = field.type_(value)
+                except ValueError:
+                    return
+            if field.type_ == datetime.datetime:
+                try:
+                    value = datetime.datetime.fromisoformat(value)
                 except ValueError:
                     return
             logger.debug(f"set_subfield({model_clz.__name__}) {field_name}={value}")
