@@ -1,5 +1,14 @@
-Show columns
+handle date types
+displayed columns hook
+
+linked models
+row summary hook, for displaying a short description of the row for relationship building
 
 Auto-focus fields when loading forms
 
 CSV export / import
+
+
+For fields which reference foreign key:
+  * table view shows the short description (or __repr__)
+  * edit view shows a filterable list of foreign items or a (new) entry
