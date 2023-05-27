@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import typing as t
 
@@ -19,6 +20,9 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_AUTH_SESSION_EXPIRATION_DELTA = datetime.timedelta(days=7)
+
+
 def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     if getattr(State, "persistent_token", None) is not None:
         return State
@@ -31,16 +35,6 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
             # only re-assign if the new value is different
             self.persistent_token = persistent_token
 
-    def _login(self, user_id: int):
-        if self.authenticated_user_id > 0:
-            return
-        with pc.session() as session:
-            session.add(AuthSession(user_id=user_id, session_id=self.current_token))
-            session.commit()
-        self.persistent_token = self.persistent_token
-
-    State._login = _login
-
     @add_event_handler(State)
     def do_logout(self):
         with pc.session() as session:
@@ -50,6 +44,17 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
                 session.delete(auth_session)
             session.commit()
         self.persistent_token = self.persistent_token
+
+    def _login(self, user_id: int, expiration_delta: datetime.timedelta = DEFAULT_AUTH_SESSION_EXPIRATION_DELTA):
+        if self.authenticated_user_id > 0:
+            return
+        do_logout(self)
+        with pc.session() as session:
+            session.add(AuthSession(user_id=user_id, session_id=self.current_token, expiration=datetime.datetime.now(datetime.timezone.utc) + expiration_delta))
+            session.commit()
+        self.persistent_token = self.persistent_token
+
+    State._login = _login
 
     @add_computed_var(State)
     @pc.cached_var
@@ -62,7 +67,10 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     def authenticated_user_id(self) -> int:
         with pc.session() as session:
             s = session.exec(
-                AuthSession.select.where(AuthSession.session_id == self.current_token),
+                AuthSession.select.where(
+                    AuthSession.session_id == self.current_token,
+                    AuthSession.expiration >= datetime.datetime.now(datetime.timezone.utc),
+                ),
             ).first()
             if s:
                 return s.user_id
@@ -84,8 +92,10 @@ def _create_first_admin_user(
     user.password_hash = password
     user.enabled = True
     user.admin = True
+    user.do_hash_password()
     session.add(user)
     session.commit()
+    session.refresh(user)
     logger.warning(f"Created first new admin user: {username}")
     return user
 
