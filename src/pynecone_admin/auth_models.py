@@ -10,6 +10,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class User(pc.Model, table=True):
     """A local User model with bcrypt password hashing."""
+
     username: str = Field(unique=True, nullable=False, index=True)
     password_hash: str = Field(nullable=False)
     enabled: bool = False
@@ -33,9 +34,13 @@ class User(pc.Model, table=True):
 
 class AuthSession(pc.Model, table=True):
     """Correlate a session_id with an arbitrary user_id."""
+
     user_id: int = Field(index=True, nullable=False)
     session_id: str = Field(unique=True, index=True, nullable=False)
-    expiration: datetime.datetime = Field(sa_column=Column(DateTime(timezone=True), server_default=func.now()), nullable=False)
+    expiration: datetime.datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+        nullable=False,
+    )
 
     def dict(self, *args, **kwargs) -> dict:
         """Convert the object to a serializable dictionary."""

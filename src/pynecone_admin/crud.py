@@ -30,35 +30,57 @@ QUERY_PARAM_DEFAULTS = {
 
 
 class FormComponent(t.Protocol):
-    def __call__(self, *children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    def __call__(
+        self, *children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any
+    ) -> pc.Component:
         ...
 
 
-def default_form_component(*children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+def default_form_component(
+    *children: pc.Component, on_submit: pc.event.EventHandler, **kwargs: t.Any
+) -> pc.Component:
     return pc.form(*children, on_submit=on_submit, **kwargs)
 
 
 class FieldComponent(t.Protocol):
-    def __call__(self, field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    def __call__(
+        self,
+        field: pydantic.Field,
+        value: t.Any,
+        on_change: pc.event.EventHandler,
+        on_set_default: pc.event.EventHandler,
+        **kwargs: t.Any,
+    ) -> pc.Component:
         ...
 
 
-def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+def default_field_component(
+    field: pydantic.Field,
+    value: t.Any,
+    on_change: pc.event.EventHandler,
+    on_set_default: pc.event.EventHandler,
+    **kwargs: t.Any,
+) -> pc.Component:
     kwargs["is_required"] = kwargs.pop("is_required", field.required)
     attrs_if_required = {"color": "red"} if field.required else {}
     field_name_and_type = field.name + f" ({field.type_.__name__})"
     if field.default is None:
         value_is_default = value.to_string() == "null"
     else:
-        value_is_default = (value == field.default)
+        value_is_default = value == field.default
     label = pc.form_label(
         pc.flex(
             pc.text(field_name_and_type),
             pc.spacer(),
             pc.cond(
                 value_is_default,
-                pc.text("(NULL)" if field.default is None else "(default)", **attrs_if_required),
-                pc.text("(reset to default)", on_click=on_set_default, cursor="pointer"),
+                pc.text(
+                    "(NULL)" if field.default is None else "(default)",
+                    **attrs_if_required,
+                ),
+                pc.text(
+                    "(reset to default)", on_click=on_set_default, cursor="pointer"
+                ),
             ),
         ),
     )
@@ -82,20 +104,28 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
     elif issubclass(field.type_, (str, uuid.UUID)):
         input_control = debounce_input(
             pc.input(
-                placeholder=field.name, value=value.to(str) | "", on_change=on_change, **kwargs,
+                placeholder=field.name,
+                value=value.to(str) | "",
+                on_change=on_change,
+                **kwargs,
             ),
         )
         if issubclass(field.type_, uuid.UUID):
             input_control = pc.hstack(
                 input_control,
                 pc.button(
-                    "🎲", on_click=lambda: on_change("random"),
+                    "🎲",
+                    on_click=lambda: on_change("random"),
                 ),
             )
-    elif issubclass(field.type_,  datetime.datetime):
+    elif issubclass(field.type_, datetime.datetime):
         input_control = debounce_input(
             pc.input(
-                type_="datetime-local", placeholder=field.name, value=value.to(str), on_change=on_change, **kwargs,
+                type_="datetime-local",
+                placeholder=field.name,
+                value=value.to(str),
+                on_change=on_change,
+                **kwargs,
             )
         )
     elif issubclass(field.type_, enum.Enum):
@@ -107,7 +137,7 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             *options,
             value=value.to(str) | "",
             on_change=on_change,
-            placeholder = repr(field.type_)
+            placeholder=repr(field.type_),
         )
     elif issubclass(field.type_, bool):
         input_control = pc.checkbox(
@@ -141,11 +171,10 @@ def format_query_string(params: dict[str, t.Any]) -> str:
 
 
 def fields(model_clz: t.Type[pc.Model]) -> dict[str, pydantic.Field]:
-    selected_fields: list[str] = getattr(model_clz, "__pynecone_admin_fields__", model_clz.__fields__.keys())
-    return {
-        key: model_clz.__fields__[key]
-        for key in selected_fields
-    }
+    selected_fields: list[str] = getattr(
+        model_clz, "__pynecone_admin_fields__", model_clz.__fields__.keys()
+    )
+    return {key: model_clz.__fields__[key] for key in selected_fields}
 
 
 def add_crud_routes(
@@ -235,7 +264,9 @@ def add_crud_routes(
                         self.db_message = ""
                     if self.current_obj is not None:
                         hook = getattr(
-                            self.current_obj, "__pynecone_admin_load_object_hook__", None
+                            self.current_obj,
+                            "__pynecone_admin_load_object_hook__",
+                            None,
                         )
                         if hook:
                             hook()
@@ -295,10 +326,16 @@ def add_crud_routes(
             self._trigger_update = time.time()
 
         def offset(self) -> int:
-            return int(self.get_query_params().get("offset", QUERY_PARAM_DEFAULTS["offset"]))
+            return int(
+                self.get_query_params().get("offset", QUERY_PARAM_DEFAULTS["offset"])
+            )
 
         def page_size(self) -> int:
-            return int(self.get_query_params().get("page_size", QUERY_PARAM_DEFAULTS["page_size"]))
+            return int(
+                self.get_query_params().get(
+                    "page_size", QUERY_PARAM_DEFAULTS["page_size"]
+                )
+            )
 
         def filter_value(self) -> str:
             return self.get_query_params().get("filter", QUERY_PARAM_DEFAULTS["filter"])
@@ -306,24 +343,35 @@ def add_crud_routes(
         def obj_page(self):
             if self.authenticated_user_id < 0 or not can_access_resource(self):
                 return []  # no viewie
-            if self.get_current_page() != "/" + utils.format.format_route(f"{prefix}/{model_clz.__name__}"):
+            if self.get_current_page() != "/" + utils.format.format_route(
+                f"{prefix}/{model_clz.__name__}"
+            ):
                 return []  # page/table not active
-            self._page_params = self.get_query_params()  # cache these to redirect after editing
-            logger.debug(f"get page: {self._trigger_update} {self.offset} {self.page_size} {self.filter_value}")
+            self._page_params = (
+                self.get_query_params()
+            )  # cache these to redirect after editing
+            logger.debug(
+                f"get page: {self._trigger_update} {self.offset} {self.page_size} {self.filter_value}"
+            )
+
             def hook(row):
                 _hook = getattr(row, "__pynecone_admin_load_row_hook__", None)
                 if _hook:
                     _hook()
                 return row
+
             def filter_hook(filter_value):
                 _hook = getattr(model_clz, "__pynecone_admin_filter_where_hook__", None)
                 if _hook is not None:
                     return _hook(filter_value)
                 # default implementation just slowly scans every column
                 return or_(
-                    col(getattr(model_clz, field_name)).cast(sqlalchemy.String).ilike(f"%{filter_value}%")
+                    col(getattr(model_clz, field_name))
+                    .cast(sqlalchemy.String)
+                    .ilike(f"%{filter_value}%")
                     for field_name in fields(model_clz)
                 )
+
             with pc.session() as session:
                 select_stmt = model_clz.select
                 if self.filter_value != "":
@@ -506,12 +554,21 @@ def add_crud_routes(
     def filter_component(SubState: pc.State) -> pc.Component:
         return pc.hstack(
             debounce_input(
-                pc.input(placeholder="filter", value=SubState.filter_value, on_change=SubState.set_filter_value),
+                pc.input(
+                    placeholder="filter",
+                    value=SubState.filter_value,
+                    on_change=SubState.set_filter_value,
+                ),
                 debounce_timeout=500,
             ),
             pc.cond(
                 SubState.filter_value != QUERY_PARAM_DEFAULTS["filter"],
-                pc.button("Clear", on_click=lambda: SubState.set_filter_value(QUERY_PARAM_DEFAULTS["filter"])),
+                pc.button(
+                    "Clear",
+                    on_click=lambda: SubState.set_filter_value(
+                        QUERY_PARAM_DEFAULTS["filter"]
+                    ),
+                ),
             ),
         )
 
@@ -538,12 +595,14 @@ def add_crud_routes(
                                 ],
                                 on_click=pc.redirect(
                                     "/"
-                                    + utils.format.format_route(f"{prefix}/{u.type_.__name__}/")
+                                    + utils.format.format_route(
+                                        f"{prefix}/{u.type_.__name__}/"
+                                    )
                                     + "/"
                                     + u.id.to_string().to(str),
                                 ),
                                 cursor="pointer",
-                                _hover={"background": "#EEE"}
+                                _hover={"background": "#EEE"},
                             ),
                         ),
                     ),

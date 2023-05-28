@@ -45,12 +45,23 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
             session.commit()
         self.persistent_token = self.persistent_token
 
-    def _login(self, user_id: int, expiration_delta: datetime.timedelta = DEFAULT_AUTH_SESSION_EXPIRATION_DELTA):
+    def _login(
+        self,
+        user_id: int,
+        expiration_delta: datetime.timedelta = DEFAULT_AUTH_SESSION_EXPIRATION_DELTA,
+    ):
         if self.authenticated_user_id > 0:
             return
         do_logout(self)
         with pc.session() as session:
-            session.add(AuthSession(user_id=user_id, session_id=self.current_token, expiration=datetime.datetime.now(datetime.timezone.utc) + expiration_delta))
+            session.add(
+                AuthSession(
+                    user_id=user_id,
+                    session_id=self.current_token,
+                    expiration=datetime.datetime.now(datetime.timezone.utc)
+                    + expiration_delta,
+                )
+            )
             session.commit()
         self.persistent_token = self.persistent_token
 
@@ -69,7 +80,8 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
             s = session.exec(
                 AuthSession.select.where(
                     AuthSession.session_id == self.current_token,
-                    AuthSession.expiration >= datetime.datetime.now(datetime.timezone.utc),
+                    AuthSession.expiration
+                    >= datetime.datetime.now(datetime.timezone.utc),
                 ),
             ).first()
             if s:
@@ -147,7 +159,7 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                 LogonState.is_hydrated == False,
                 pc.text("Not Connected to Backend ... Check Internet Connectivity"),
                 pc.box(),
-            )
+            ),
         ),
         pc.form(
             debounce_input(
