@@ -39,12 +39,13 @@ def default_form_component(*children: pc.Component, on_submit: pc.event.EventHan
 
 
 class FieldComponent(t.Protocol):
-    def __call__(self, field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    def __call__(self, field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
         ...
 
 
 def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
     kwargs["is_required"] = kwargs.pop("is_required", field.required)
+    attrs_if_required = {"color": "red"} if field.required else {}
     if issubclass(field.type_, bool):
         return pc.checkbox(
             field.name,
@@ -53,13 +54,17 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             **kwargs,
         )
     field_name_and_type = field.name + f" ({field.type_.__name__})"
-    attrs_if_required = {"color": "red"} if field.required else {}
+    if field.default is None:
+        value_is_default = value.to_string() == "null"
+    else:
+        value_is_default = (value == field.default)
     label = pc.form_label(
-        pc.hstack(
+        pc.flex(
             pc.text(field_name_and_type),
+            pc.spacer(),
             pc.cond(
-                value.to_string() == "null",
-                pc.text("(NULL)", **attrs_if_required),
+                value_is_default,
+                pc.text("(NULL)" if field.default is None else "(default)", **attrs_if_required),
                 pc.text("(reset to default)", on_click=on_set_default, cursor="pointer"),
             ),
         ),
@@ -109,7 +114,7 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             *options,
             value=value.to(str) | "",
             on_change=on_change,
-            placeholder = f"{field.type_!r} (unset)"
+            placeholder = repr(field.type_)
         )
     elif issubclass(field.type_, (int, float)):
         input_control = pc.number_input(
@@ -169,7 +174,7 @@ def add_crud_routes(
         def set_subfield(self, field_name: str, value: str | None):
             if not can_access_resource(self):
                 return  # no changes unless you are admin
-            self.form_error = ""
+            self.form_message = ""
             field = self.current_obj.__fields__[field_name]
             if value is not None:
                 if issubclass(field.type_, (int, float)):
@@ -177,20 +182,20 @@ def add_crud_routes(
                         # cast directly as the type_
                         value = field.type_(value)
                     except ValueError as exc:
-                        self.form_error = str(exc)
+                        self.form_message = str(exc)
                         return
                 # special type initialization handling
                 if issubclass(field.type_, enum.Enum):
                     try:
                         value = field.type_.__members__[value]
                     except KeyError as exc:
-                        self.form_error = str(exc)
+                        self.form_message = str(exc)
                         return
                 if issubclass(field.type_, datetime.datetime):
                     try:
                         value = datetime.datetime.fromisoformat(value)
                     except ValueError as exc:
-                        self.form_error = str(exc)
+                        self.form_message = str(exc)
                 if issubclass(field.type_, uuid.UUID):
                     if value == "random":
                         value = uuid.uuid4()
@@ -202,7 +207,7 @@ def add_crud_routes(
                             try:
                                 value = uuid.UUID(value)
                             except ValueError as exc:
-                                self.form_error = str(exc)
+                                self.form_message = str(exc)
                                 return
             logger.debug(f"set_subfield({model_clz.__name__}) {field_name}={value}")
             setattr(self.current_obj, field_name, value)
@@ -224,10 +229,10 @@ def add_crud_routes(
                             model_clz.select.where(model_clz.id == obj_id)
                         ).one_or_none()
                     except Exception as exc:
-                        self.db_error = str(exc)
+                        self.db_message = str(exc)
                         return
                     else:
-                        self.db_error = ""
+                        self.db_message = ""
                     if self.current_obj is not None:
                         hook = getattr(
                             self.current_obj, "__pynecone_admin_load_object_hook__", None
@@ -253,8 +258,9 @@ def add_crud_routes(
                     session.add(self.current_obj)
                     session.commit()
                     session.refresh(self.current_obj)
+                    self.db_message = f"Persist {self.current_obj}"
                 except Exception as exc:
-                    self.db_error = str(exc)
+                    self.db_message = str(exc)
                     return
             return self.redirect_back_to_table()
 
@@ -272,20 +278,20 @@ def add_crud_routes(
                     try:
                         session.delete(self.current_obj)
                         session.commit()
+                        self.db_message = f"Deleted {self.current_obj}"
                     except Exception as exc:
-                        self.db_error = str(exc)
+                        self.db_message = str(exc)
                         return
             return self.redirect_back_to_table()
 
         def reset(self):
             self.current_obj = model_clz()
-            self.db_error = ""
+            self.db_message = ""
 
         def redir_to_new(self):
             return pc.redirect(self.get_current_page() + "/new")
 
         def refresh(self):
-            breakpoint()
             self._trigger_update = time.time()
 
         def offset(self) -> int:
@@ -404,14 +410,14 @@ def add_crud_routes(
                     "current_obj": model_clz,
                     "_trigger_update": float,
                     "_page_params": dict[str, t.Any],
-                    "db_error": str,
-                    "form_error": str,
+                    "db_message": str,
+                    "form_message": str,
                 },
                 "current_obj": model_clz(),
                 "_trigger_update": 0.0,
                 "_page_params": {},
-                "db_error": "",
-                "form_error": "",
+                "db_message": "",
+                "form_message": "",
                 "filter_value": pc.cached_var(filter_value),
                 "offset": pc.cached_var(offset),
                 "page_size": pc.cached_var(page_size),
@@ -458,8 +464,8 @@ def add_crud_routes(
                 ),
             )
         return form_component(
-            pc.text(SubState.db_error, width="50vw"),
-            pc.text(SubState.form_error, width="50vw"),
+            pc.text(SubState.db_message, width="50vw"),
+            pc.text(SubState.form_message, width="50vw"),
             *controls,
             on_submit=SubState.save_current_obj,
         )
