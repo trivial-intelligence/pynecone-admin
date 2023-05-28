@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import enum
+import json
 import logging
 import time
 import typing as t
@@ -42,7 +43,8 @@ class FieldComponent(t.Protocol):
         ...
 
 
-def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
+    kwargs["is_required"] = kwargs.pop("is_required", field.required)
     if issubclass(field.type_, bool):
         return pc.checkbox(
             field.name,
@@ -50,10 +52,22 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             on_change=on_change,
             **kwargs,
         )
-    label = pc.form_label(field.name + f" ({field.type_.__name__})")
+    field_name_and_type = field.name + f" ({field.type_.__name__})"
+    attrs_if_required = {"color": "red"} if field.required else {}
+    label = pc.form_label(
+        pc.hstack(
+            pc.text(field_name_and_type),
+            pc.cond(
+                value.to_string() == "null",
+                pc.text("(NULL)", **attrs_if_required),
+                pc.text("(reset to default)", on_click=on_set_default, cursor="pointer"),
+            ),
+        ),
+    )
     input_control = None
     # XXX: support alternative primary keys
     if field.name == "id":
+        label = pc.form_label(field_name_and_type)  # no resetting of id
         input_control = pc.cond(
             value,
             pc.input(
@@ -70,7 +84,7 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
     elif issubclass(field.type_, (str, uuid.UUID)):
         input_control = debounce_input(
             pc.input(
-                placeholder=field.name, value=value.to(str), on_change=on_change, **kwargs,
+                placeholder=field.name, value=value.to(str) | "", on_change=on_change, **kwargs,
             ),
         )
         if issubclass(field.type_, uuid.UUID):
@@ -87,18 +101,20 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             )
         )
     elif issubclass(field.type_, enum.Enum):
+        options = [
+            pc.option(f"{key}: {enum_value.value}", value=key)
+            for key, enum_value in field.type_.__members__.items()
+        ]
         input_control = pc.select(
-            *[
-                pc.option(f"{key}: {enum_value.value}", value=key)
-                for key, enum_value in field.type_.__members__.items()
-            ],
-            value=value.to(str),
+            *options,
+            value=value.to(str) | "",
             on_change=on_change,
+            placeholder = f"{field.type_!r} (unset)"
         )
     elif issubclass(field.type_, (int, float)):
         input_control = pc.number_input(
             input_mode="numeric",
-            value=value | 0,
+            value=value | "",
             on_change=on_change,
             **kwargs,
         )
@@ -150,43 +166,44 @@ def add_crud_routes(
         pass
 
     def CRUDSubStateFor(model_clz: t.Type[pc.Model]) -> t.Type[pc.State]:
-        def set_subfield(self, field_name, value):
+        def set_subfield(self, field_name: str, value: str | None):
             if not can_access_resource(self):
                 return  # no changes unless you are admin
             self.form_error = ""
             field = self.current_obj.__fields__[field_name]
-            if issubclass(field.type_, (int, float)):
-                try:
-                    # cast directly as the type_
-                    value = field.type_(value)
-                except ValueError as exc:
-                    self.form_error = str(exc)
-                    return
-            # special type initialization handling
-            if issubclass(field.type_, enum.Enum):
-                try:
-                    value = field.type_.__members__[value]
-                except KeyError as exc:
-                    self.form_error = str(exc)
-                    return
-            if issubclass(field.type_, datetime.datetime):
-                try:
-                    value = datetime.datetime.fromisoformat(value)
-                except ValueError as exc:
-                    self.form_error = str(exc)
-            if issubclass(field.type_, uuid.UUID):
-                if value == "random":
-                    value = uuid.uuid4()
-                else:
+            if value is not None:
+                if issubclass(field.type_, (int, float)):
                     try:
-                        # try to parse uuid from int, falling back to str or whatever
-                        value = uuid.UUID(int=int(value))
-                    except ValueError:
+                        # cast directly as the type_
+                        value = field.type_(value)
+                    except ValueError as exc:
+                        self.form_error = str(exc)
+                        return
+                # special type initialization handling
+                if issubclass(field.type_, enum.Enum):
+                    try:
+                        value = field.type_.__members__[value]
+                    except KeyError as exc:
+                        self.form_error = str(exc)
+                        return
+                if issubclass(field.type_, datetime.datetime):
+                    try:
+                        value = datetime.datetime.fromisoformat(value)
+                    except ValueError as exc:
+                        self.form_error = str(exc)
+                if issubclass(field.type_, uuid.UUID):
+                    if value == "random":
+                        value = uuid.uuid4()
+                    else:
                         try:
-                            value = uuid.UUID(value)
-                        except ValueError as exc:
-                            self.form_error = str(exc)
-                            return
+                            # try to parse uuid from int, falling back to str or whatever
+                            value = uuid.UUID(int=int(value))
+                        except ValueError:
+                            try:
+                                value = uuid.UUID(value)
+                            except ValueError as exc:
+                                self.form_error = str(exc)
+                                return
             logger.debug(f"set_subfield({model_clz.__name__}) {field_name}={value}")
             setattr(self.current_obj, field_name, value)
             # re-assign to parent attribute
@@ -422,11 +439,15 @@ def add_crud_routes(
                 type_=field.type_,
                 state=SubState.current_obj.state,
             )
-            on_change = lambda v: getattr(SubState, "set_subfield")(
-                field_name,
-                v,
+            default_value = pc.vars.BaseVar(
+                name=json.dumps(field.default),
+                type_=field.type_,
+                state="",
+                is_local=True,
             )
-            controls.append(field_component(field, value, on_change))
+            on_change = lambda v: SubState.set_subfield(field_name, v)
+            on_set_default = lambda: SubState.set_subfield(field_name, default_value)
+            controls.append(field_component(field, value, on_change, on_set_default))
 
         if controls:
             controls.append(
