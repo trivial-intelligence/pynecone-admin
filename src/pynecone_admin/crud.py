@@ -424,15 +424,6 @@ def add_crud_routes(
         )
         if value.type_ == bool:
             value = pc.cond(value, "✅", "❌")
-        if col == "id":
-            # the "edit" link
-            value = pc.link(
-                value,
-                href="/"
-                + utils.format.format_route(f"{prefix}/{obj.type_.__name__}/")
-                + "/"
-                + obj.id.to_string().to(str),
-            )
         return pc.td(value)
 
     def pagination_controls(State) -> pc.Component:
@@ -481,7 +472,15 @@ def add_crud_routes(
                                         col=col,
                                     )
                                     for col in model_clz.__fields__
-                                ]
+                                ],
+                                on_click=pc.redirect(
+                                    "/"
+                                    + utils.format.format_route(f"{prefix}/{u.type_.__name__}/")
+                                    + "/"
+                                    + u.id.to_string().to(str),
+                                ),
+                                cursor="pointer",
+                                _hover={"background": "#EEE"}
                             ),
                         ),
                     ),
