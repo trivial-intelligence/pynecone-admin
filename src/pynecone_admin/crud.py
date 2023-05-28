@@ -46,13 +46,6 @@ class FieldComponent(t.Protocol):
 def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.event.EventHandler, on_set_default: pc.event.EventHandler, **kwargs: t.Any) -> pc.Component:
     kwargs["is_required"] = kwargs.pop("is_required", field.required)
     attrs_if_required = {"color": "red"} if field.required else {}
-    if issubclass(field.type_, bool):
-        return pc.checkbox(
-            field.name,
-            is_checked=value,
-            on_change=on_change,
-            **kwargs,
-        )
     field_name_and_type = field.name + f" ({field.type_.__name__})"
     if field.default is None:
         value_is_default = value.to_string() == "null"
@@ -115,6 +108,13 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
             value=value.to(str) | "",
             on_change=on_change,
             placeholder = repr(field.type_)
+        )
+    elif issubclass(field.type_, bool):
+        input_control = pc.checkbox(
+            value.to_string(),
+            is_checked=value,
+            on_change=on_change,
+            **kwargs,
         )
     elif issubclass(field.type_, (int, float)):
         input_control = pc.number_input(
