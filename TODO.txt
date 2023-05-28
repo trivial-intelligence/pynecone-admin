@@ -2,6 +2,8 @@ handle date types
 displayed columns hook
 mark required fields
 
+alternative primary keys
+
 linked models
 row summary hook, for displaying a short description of the row for relationship building
 
