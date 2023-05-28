@@ -121,6 +121,14 @@ def format_query_string(params: dict[str, t.Any]) -> str:
     return urllib.parse.urlencode({k.replace("_", "-"): v for k, v in params.items()})
 
 
+def fields(model_clz: t.Type[pc.Model]) -> dict[str, pydantic.Field]:
+    selected_fields: list[str] = getattr(model_clz, "__pynecone_admin_fields__", model_clz.__fields__.keys())
+    return {
+        key: model_clz.__fields__[key]
+        for key in selected_fields
+    }
+
+
 def add_crud_routes(
     app: pc.App,
     objs: t.Sequence[t.Type[pc.Model]],
@@ -275,7 +283,7 @@ def add_crud_routes(
                 # default implementation just slowly scans every column
                 return or_(
                     col(getattr(model_clz, field_name)).cast(sqlalchemy.String).ilike(f"%{filter_value}%")
-                    for field_name in model_clz.__fields__
+                    for field_name in fields(model_clz)
                 )
             with pc.session() as session:
                 select_stmt = model_clz.select
@@ -390,7 +398,7 @@ def add_crud_routes(
     ) -> pc.Component:
         SubState = substate_for(model_clz)
         controls = []
-        for field_name, field in model_clz.__fields__.items():
+        for field_name, field in fields(model_clz).items():
             value = pc.vars.BaseVar(
                 name=f"{SubState.current_obj.name}.{field_name}",
                 type_=field.type_,
@@ -460,7 +468,7 @@ def add_crud_routes(
             pc.table_container(
                 pc.table(
                     pc.thead(
-                        pc.tr(*[pc.th(col) for col in model_clz.__fields__]),
+                        pc.tr(*[pc.th(col) for col in fields(model_clz)]),
                     ),
                     pc.tbody(
                         pc.foreach(
@@ -471,7 +479,7 @@ def add_crud_routes(
                                         obj=u,
                                         col=col,
                                     )
-                                    for col in model_clz.__fields__
+                                    for col in fields(model_clz)
                                 ],
                                 on_click=pc.redirect(
                                     "/"
