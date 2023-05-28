@@ -39,7 +39,7 @@ class AuthSession(pc.Model, table=True):
 
     def dict(self, *args, **kwargs) -> dict:
         """Convert the object to a serializable dictionary."""
-        d = super().dict()
+        d = super().dict(*args, **kwargs)
         if self.expiration:
             d["expiration"] = self.expiration.replace(microsecond=0).isoformat()
         return d

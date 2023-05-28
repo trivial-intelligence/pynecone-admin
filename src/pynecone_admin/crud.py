@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import enum
 import logging
 import time
 import typing as t
@@ -58,6 +59,18 @@ def default_field_component(field: pydantic.Field, value: t.Any, on_change: pc.e
                     type_="datetime-local", placeholder=field.name, value=value.to(str), on_change=on_change, **kwargs,
                 )
             ),
+        )
+    if issubclass(field.type_, enum.Enum):
+        return pc.form_control(
+            pc.form_label(field.name),
+            pc.select(
+                *[
+                    pc.option(f"{key}: {enum_value.value}", value=key)
+                    for key, enum_value in field.type_.__members__.items()
+                ],
+                value=value.to(str),
+                on_change=on_change,
+            )
         )
     if field.name == "id":
         return pc.form_control(
@@ -139,6 +152,11 @@ def add_crud_routes(
                 try:
                     value = field.type_(value)
                 except ValueError:
+                    return
+            if issubclass(field.type_, enum.Enum):
+                try:
+                    value = field.type_.__members__[value]
+                except KeyError:
                     return
             if field.type_ == datetime.datetime:
                 try:
@@ -440,7 +458,7 @@ def add_crud_routes(
             ),
         )
 
-    def enum(model_clz: t.Type[pc.Model]) -> pc.Component:
+    def table(model_clz: t.Type[pc.Model]) -> pc.Component:
         SubState = substate_for(model_clz)
         return pc.fragment(
             debounce_input(
@@ -473,7 +491,7 @@ def add_crud_routes(
         )
 
     def make_page(model_clz: t.Type[pc.Model]) -> pc.Component:
-        enum_component = enum(model_clz)
+        enum_component = table(model_clz)
 
         @login_required(State=app.state)
         def page() -> pc.Component:
