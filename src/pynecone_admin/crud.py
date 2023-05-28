@@ -16,7 +16,7 @@ import sqlalchemy
 from sqlmodel import col, or_
 
 from .auth import login_required
-from .utils import debounce_input, fix_local_event_handlers
+from .utils import color_mode, debounce_input, fix_local_event_handlers
 
 
 logger = logging.getLogger(__name__)
@@ -582,7 +582,7 @@ def add_crud_routes(
             ),
         )
 
-    def table(model_clz: t.Type[pc.Model]) -> pc.Component:
+    def table_component(model_clz: t.Type[pc.Model]) -> pc.Component:
         SubState = substate_for(model_clz)
         return pc.fragment(
             filter_component(SubState),
@@ -612,7 +612,13 @@ def add_crud_routes(
                                     + u.id.to_string().to(str),
                                 ),
                                 cursor="pointer",
-                                _hover={"background": "#EEE"},
+                                _hover={
+                                    "background": pc.cond(
+                                        color_mode == "dark",
+                                        "var(--chakra-colors-whiteAlpha-200)",
+                                        "var(--chakra-colors-blackAlpha-200)",
+                                    ),
+                                },
                             ),
                         ),
                     ),
@@ -621,19 +627,53 @@ def add_crud_routes(
             pagination_controls(SubState),
         )
 
+    def breadcrumb_navigation(
+        breadcrumb_links: list[tuple[str, str]],
+        separator: str
+        | pc.Component = pc.text(">", padding_left="5px", padding_right="5px"),
+    ) -> list[pc.Component]:
+        children = [pc.link("pynecone-admin", href=f"{prefix}", font_weight="bold")]
+        for link_name, href in breadcrumb_links:
+            children.append(separator)
+            children.append(pc.link(link_name, href=href))
+        return children
+
+    def header_component(
+        breadcrumb_links: list[tuple[str, str]] | None = None
+    ) -> pc.Component:
+        breadcrumb_links = breadcrumb_navigation(breadcrumb_links or [])
+        return pc.flex(
+            *breadcrumb_links,
+            pc.spacer(),
+            pc.button(
+                pc.cond(color_mode == "light", pc.icon(tag="moon"), pc.icon(tag="sun")),
+                on_click=pc.toggle_color_mode,
+            ),
+            pc.cond(
+                app.state.authenticated_user_id > -1,
+                pc.button(
+                    "Logout",
+                    on_click=app.state.do_logout,
+                    margin_left="2vw",
+                ),
+            ),
+            width="100%",
+            padding_top="1vh",
+            padding_left="1vw",
+            padding_right="1vw",
+            padding_bottom="5vh",
+        )
+
     def make_page(model_clz: t.Type[pc.Model]) -> pc.Component:
-        enum_component = table(model_clz)
+        table = table_component(model_clz)
 
         @login_required(State=app.state)
         def page() -> pc.Component:
             return pc.vstack(
-                pc.hstack(
-                    pc.link("All Models", href=prefix),
-                    pc.text(">"),
-                    pc.heading(model_clz.__name__),
-                ),
-                enum_component,
+                header_component(breadcrumb_links=[(pc.text(model_clz.__name__), "#")]),
+                table,
                 align_items="flex-start",
+                padding_left="2vw",
             )
 
         return page
@@ -643,15 +683,30 @@ def add_crud_routes(
 
         @login_required(State=app.state)
         def page() -> pc.Component:
+            obj_id = pc.vars.BaseVar(
+                name="obj_id",
+                type_=int,
+                state=app.state.get_full_name(),
+            )
             return pc.vstack(
+                header_component(
+                    breadcrumb_links=[
+                        (
+                            pc.text(model_clz.__name__),
+                            "/" + utils.format.format_route(f"{prefix}/{obj.__name__}"),
+                        ),
+                        (pc.text(obj_id), "#"),
+                    ]
+                ),
                 crud_component,
-                padding_top="5%",
+                padding_left="2vw",
             )
 
         return page
 
     def all_models() -> pc.Component:
         return pc.vstack(
+            header_component(),
             *(
                 pc.link(
                     obj.__name__,
@@ -659,7 +714,7 @@ def add_crud_routes(
                 )
                 for obj in objs
             ),
-            padding_top="5%",
+            padding_left="2vw",
         )
 
     for obj in objs:

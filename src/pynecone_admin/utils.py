@@ -73,3 +73,6 @@ def add_event_handler(State: t.Type[pc.State]):
 
 def debounce_input(*args, **kwargs) -> pc.Component:
     return pynecone_debounce_input.debounce_input(*args, **kwargs)
+
+
+color_mode = pc.vars.BaseVar(name=pc.constants.COLOR_MODE, type_=str, is_local=True)
