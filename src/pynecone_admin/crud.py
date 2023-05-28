@@ -136,11 +136,11 @@ def default_field_component(
         )
     elif issubclass(field.type_, enum.Enum):
         options = [
-            pc.option(f"{key}: {enum_value.value}", value=key)
+            pc.option(label=f"{key}: {enum_value.value}", value=key)
             for key, enum_value in field.type_.__members__.items()
         ]
         input_control = pc.select(
-            *options,
+            options=options,
             value=value.to(str) | "",
             on_change=on_change,
             placeholder=repr(field.type_),
