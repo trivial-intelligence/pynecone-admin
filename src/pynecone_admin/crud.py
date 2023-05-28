@@ -503,13 +503,22 @@ def add_crud_routes(
             ),
         )
 
-    def table(model_clz: t.Type[pc.Model]) -> pc.Component:
-        SubState = substate_for(model_clz)
-        return pc.fragment(
+    def filter_component(SubState: pc.State) -> pc.Component:
+        return pc.hstack(
             debounce_input(
                 pc.input(placeholder="filter", value=SubState.filter_value, on_change=SubState.set_filter_value),
                 debounce_timeout=500,
             ),
+            pc.cond(
+                SubState.filter_value != QUERY_PARAM_DEFAULTS["filter"],
+                pc.button("Clear", on_click=lambda: SubState.set_filter_value(QUERY_PARAM_DEFAULTS["filter"])),
+            ),
+        )
+
+    def table(model_clz: t.Type[pc.Model]) -> pc.Component:
+        SubState = substate_for(model_clz)
+        return pc.fragment(
+            filter_component(SubState),
             pagination_controls(SubState),
             pc.table_container(
                 pc.table(
