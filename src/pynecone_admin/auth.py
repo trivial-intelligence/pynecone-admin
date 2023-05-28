@@ -50,7 +50,7 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
         user_id: int,
         expiration_delta: datetime.timedelta = DEFAULT_AUTH_SESSION_EXPIRATION_DELTA,
     ):
-        if self.authenticated_user_id > 0:
+        if self.authenticated_user_id > -1:
             return
         do_logout(self)
         with pc.session() as session:
@@ -151,33 +151,39 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
         LOGON_STATE_FOR_STATE[State] = LogonState
     LogonState = LOGON_STATE_FOR_STATE[State]
 
-    return pc.vstack(
-        pc.cond(  # conditionally show error messages
-            LogonState.error_message != "",
-            pc.text(LogonState.error_message),
-            pc.cond(
-                LogonState.is_hydrated == False,
-                pc.text("Not Connected to Backend ... Check Internet Connectivity"),
-                pc.box(),
+    login_form = pc.form(
+        debounce_input(
+            pc.input(
+                placeholder="username",
+                value=LogonState.username,
+                on_change=LogonState.set_username,
             ),
         ),
-        pc.form(
-            debounce_input(
-                pc.input(
-                    placeholder="username",
-                    value=LogonState.username,
-                    on_change=LogonState.set_username,
-                ),
+        debounce_input(
+            pc.password(
+                placeholder="password",
+                value=LogonState.password,
+                on_change=LogonState.set_password,
             ),
-            debounce_input(
-                pc.password(
-                    placeholder="password",
-                    value=LogonState.password,
-                    on_change=LogonState.set_password,
-                ),
+        ),
+        pc.button("Logon", type_="submit"),
+        on_submit=LogonState.on_submit,
+    )
+
+    return pc.cond(
+        LogonState.is_hydrated == False,
+        pc.vstack(
+            pc.text("Connecting to Backend"),
+            pc.spinner(),
+            padding_top="10vh",
+        ),
+        pc.vstack(
+            pc.cond(  # conditionally show error messages
+                LogonState.error_message != "",
+                pc.text(LogonState.error_message),
             ),
-            pc.button("Logon", type_="submit"),
-            on_submit=LogonState.on_submit,
+            login_form,
+            padding_top="10vh",
         ),
     )
 
@@ -199,11 +205,8 @@ def login_required(
         return pc.fragment(
             PersistentToken.create(on_change=State.set_persistent_token),
             pc.cond(
-                State.authenticated_user_id > 0,
-                pc.fragment(
-                    original_component(),
-                    pc.center(pc.button("Logout", on_click=State.do_logout)),
-                ),
+                State.authenticated_user_id > -1,
+                original_component(),
                 login_component(State),
             ),
         )
