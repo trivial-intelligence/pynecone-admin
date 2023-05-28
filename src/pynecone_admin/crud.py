@@ -101,7 +101,7 @@ def default_field_component(
                 **kwargs,
             ),
         )
-    elif issubclass(field.type_, (str, uuid.UUID)):
+    elif issubclass(field.type_, (str, float, uuid.UUID)):
         input_control = debounce_input(
             pc.input(
                 placeholder=field.name,
@@ -119,14 +119,20 @@ def default_field_component(
                 ),
             )
     elif issubclass(field.type_, datetime.datetime):
-        input_control = debounce_input(
-            pc.input(
-                type_="datetime-local",
-                placeholder=field.name,
-                value=value.to(str),
-                on_change=on_change,
-                **kwargs,
-            )
+        input_control = pc.hstack(
+            debounce_input(
+                pc.input(
+                    type_="datetime-local",
+                    placeholder=field.name,
+                    value=value.to(str) | "",
+                    on_change=on_change,
+                    **kwargs,
+                )
+            ),
+            pc.button(
+                "Now",
+                on_click=lambda: on_change("now"),
+            ),
         )
     elif issubclass(field.type_, enum.Enum):
         options = [
@@ -146,7 +152,7 @@ def default_field_component(
             on_change=on_change,
             **kwargs,
         )
-    elif issubclass(field.type_, (int, float)):
+    elif issubclass(field.type_, int):
         input_control = pc.number_input(
             input_mode="numeric",
             value=value | "",
@@ -221,10 +227,14 @@ def add_crud_routes(
                         self.form_message = str(exc)
                         return
                 if issubclass(field.type_, datetime.datetime):
-                    try:
-                        value = datetime.datetime.fromisoformat(value)
-                    except ValueError as exc:
-                        self.form_message = str(exc)
+                    if value == "now":
+                        # TODO: sane timezone handling?
+                        value = datetime.datetime.now()
+                    else:
+                        try:
+                            value = datetime.datetime.fromisoformat(value)
+                        except ValueError as exc:
+                            self.form_message = str(exc)
                 if issubclass(field.type_, uuid.UUID):
                     if value == "random":
                         value = uuid.uuid4()
@@ -385,6 +395,8 @@ def add_crud_routes(
                     )
                 ]
 
+        obj_page.__annotations__ = {"return": list[model_clz]}
+
         def redirect_back_to_table(self):
             self.reset()
             # do NOT carry obj_id back to the table
@@ -431,8 +443,6 @@ def add_crud_routes(
 
         def has_next_results(self) -> bool:
             return len(self.obj_page) == self.page_size
-
-        obj_page.__annotations__ = {"return": list[model_clz]}
 
         event_handlers = (
             set_subfield,
