@@ -17,7 +17,7 @@ See [./example/example/example.py](example.py).
 ## Usage
 
 1. Include `pynecone-admin` in your project `requirements.txt`.
-2. Call `pynecone_admin.add_crud_routes(app=app, obs=[pynecone_admin.User, Widget], prefix="/crud")`
+2. Call `pynecone_admin.add_crud_routes(app=app, objs=[pynecone_admin.User, Widget], prefix="/crud")`
 3. `pc init && pc run`
 4. Access models at `/crud`.
 
