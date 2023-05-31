@@ -36,6 +36,7 @@ class Stuff(pc.Model, table=True):
     f4: F4 | None = None
     f5: uuid.UUID | None = None
     f6: bool | None = None
+    f7: float | None = None
     hidden: str = "hidden"
 
     def dict(self, *args, **kwargs):
@@ -96,12 +97,13 @@ class State(pc.State):
             with pc.session() as session:
                 logger.debug(
                     getattr(self, "get_current_page")()
-                    + f" Lookup user_id: {self.authenticated_user_id}"
+                    + f" Lookup authenticated_user_id: {self.authenticated_user_id}"
                 )
-                logger.debug(getattr(self, "dirty_vars"))
-                return session.exec(
+                user = session.exec(
                     User.select.where(User.id == self.authenticated_user_id)
                 ).one_or_none()
+                if user:
+                    return user
         return User()
 
 
@@ -110,6 +112,7 @@ def index() -> pc.Component:
         pc.vstack(
             pc.heading("Welcome to Pynecone!", font_size="2em"),
             pc.link("Protected Page", href="/protected"),
+            pc.link("CRUD Models", href="/crud"),
         ),
         padding_top="10%",
     )
@@ -130,14 +133,14 @@ def protected() -> pc.Component:
     )
 
 
-def can_access_resource(state: pc.State) -> bool:
-    return state.authenticated_user.admin
-
-
 app = pc.App(state=State)
 app.add_page(index)
 app.add_page(protected, route="/protected")
 crud.add_crud_routes(
-    app, [AuthSession, User, Hero, Stuff], can_access_resource=can_access_resource
+    app,
+    [AuthSession, User, Hero, Stuff],
+    # login and access control are optional
+    login_component=auth.default_login_component,
+    can_access_resource=lambda state: state.authenticated_user.admin,
 )
 app.compile()
