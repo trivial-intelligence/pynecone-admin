@@ -128,7 +128,8 @@ def default_field_component(
                     value=value.to(str) | "",
                     on_change=on_change,
                     **kwargs,
-                )
+                ),
+                custom_attrs={"step": "1"},
             ),
             pc.button(
                 "Now",
