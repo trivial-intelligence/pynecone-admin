@@ -66,10 +66,10 @@ additional variables and functionality:
   the client browser. This value is updated by the `PersistentToken.on_change`
   event handler defined inside the `login_required` function.
 * `authenticated_user_id`: the user_id associated with a non-expired auth session
-  matching the current state's `current_token`. If no such session exists, `-1`.
-* `do_logout`: event handler that disassociates the current state's
+  matching the state's `current_token`. If no such session exists, `-1`.
+* `do_logout`: event handler that disassociates the state's
   `current_token` with any valid auth session
-* `_login`: backend-only function that associates the current state's
+* `_login`: backend-only function that associates the state's
   `current_token` with the given `user_id` (values less than 0 are ignored).
   To implement a custom login method, the code must somehow call
   `State._login(self, user_id)` after properly authenticating the user_id.
