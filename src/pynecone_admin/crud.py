@@ -761,7 +761,7 @@ def add_crud_routes(
         app.add_page(
             make_page(obj),
             route=f"{prefix}/{obj.__name__}",
-            title=f"pynecrud: {obj.__name__}",
+            title=f"pynecone-admin: {obj.__name__}",
         )
         app.add_page(
             make_modal(obj),
