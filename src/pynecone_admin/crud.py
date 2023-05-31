@@ -188,9 +188,23 @@ def add_crud_routes(
     objs: t.Sequence[t.Type[pc.Model]],
     form_component: FormComponent | None = None,
     field_component: FieldComponent | None = None,
+    login_component: t.Callable[[t.Type[pc.State]], pc.Component] | None = None,
     can_access_resource: t.Callable[[pc.State], bool] | None = None,
     prefix: str = "/crud",
 ):
+    """
+    Add routes to the given app to support CRUD operations on the given models.
+
+    Args:
+        app: call this function before `app.compile`
+        objs: sequence of Model classes to support
+        form_component: function called to render the object create/edit form
+        field_component: function called to render a single field in the form
+        login_component: function called to render the user login form, defaults to to no login form
+            (see pynecone_admin.auth.default_login_component)
+        can_access_resource: access control function, defaults to open access
+        prefix: route prefix for admin operations
+    """
     if form_component is None:
         form_component = default_form_component
     if field_component is None:
@@ -198,6 +212,10 @@ def add_crud_routes(
     if can_access_resource is None:
         # if the user does not provide access control, allow all
         def can_access_resource(_):
+            if login_component is not None:
+                # if a login_component is provided, user must be logged in by default
+                return not app.state.authenticated_user_id < 0
+            # otherwise, anyone can access the models
             return True
 
     PER_MODEL_CRUD_STATES = {}
@@ -351,7 +369,7 @@ def add_crud_routes(
             return self.get_query_params().get("filter", QUERY_PARAM_DEFAULTS["filter"])
 
         def obj_page(self):
-            if self.authenticated_user_id < 0 or not can_access_resource(self):
+            if not can_access_resource(self):
                 return []  # no viewie
             if self.get_current_page() != "/" + utils.format.format_route(
                 f"{prefix}/{model_clz.__name__}"
@@ -656,7 +674,9 @@ def add_crud_routes(
                     on_click=app.state.do_logout,
                     margin_left="2vw",
                 ),
-            ),
+            )
+            if login_component is not None
+            else pc.fragment(),
             width="100%",
             padding_top="1vh",
             padding_left="1vw",
@@ -667,7 +687,6 @@ def add_crud_routes(
     def make_page(model_clz: t.Type[pc.Model]) -> pc.Component:
         table = table_component(model_clz)
 
-        @login_required(State=app.state)
         def page() -> pc.Component:
             return pc.vstack(
                 header_component(breadcrumb_links=[(pc.text(model_clz.__name__), "#")]),
@@ -676,12 +695,15 @@ def add_crud_routes(
                 padding_left="2vw",
             )
 
+        if login_component is not None:
+            return login_required(State=app.state, login_component=login_component)(
+                page
+            )
         return page
 
     def make_modal(model_clz: t.Type[pc.Model]) -> pc.Component:
         crud_component = create_update_delete(model_clz)
 
-        @login_required(State=app.state)
         def page() -> pc.Component:
             obj_id = pc.vars.BaseVar(
                 name="obj_id",
@@ -702,20 +724,31 @@ def add_crud_routes(
                 padding_left="2vw",
             )
 
+        if login_component is not None:
+            return login_required(State=app.state, login_component=login_component)(
+                page
+            )
         return page
 
     def all_models() -> pc.Component:
-        return pc.vstack(
-            header_component(),
-            *(
-                pc.link(
-                    obj.__name__,
-                    href=utils.format.format_route(f"{prefix}/{obj.__name__}"),
-                )
-                for obj in objs
-            ),
-            padding_left="2vw",
-        )
+        def page() -> pc.Component:
+            return pc.vstack(
+                header_component(),
+                *(
+                    pc.link(
+                        obj.__name__,
+                        href=utils.format.format_route(f"{prefix}/{obj.__name__}"),
+                    )
+                    for obj in objs
+                ),
+                padding_left="2vw",
+            )
+
+        if login_component is not None:
+            return login_required(State=app.state, login_component=login_component)(
+                page
+            )
+        return page
 
     for obj in objs:
         app.add_page(
@@ -729,4 +762,4 @@ def add_crud_routes(
             title=f"pynecone-admin: {obj.__name__} > Edit",
             on_load=substate_for(obj).load_current_obj,
         )
-    app.add_page(all_models, prefix, title="pynecone-admin: All Models")
+    app.add_page(all_models(), prefix, title="pynecone-admin: All Models")
