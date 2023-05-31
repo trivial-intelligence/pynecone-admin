@@ -16,6 +16,7 @@ import sqlalchemy
 from sqlmodel import col, or_
 
 from .auth import login_required
+from .components.select import Option, Select
 from .utils import color_mode, debounce_input, fix_local_event_handlers
 
 
@@ -136,14 +137,15 @@ def default_field_component(
         )
     elif issubclass(field.type_, enum.Enum):
         options = [
-            pc.option(label=f"{key}: {enum_value.value}", value=key)
+            Option.create(f"{key}: {enum_value.value}", value=key)
             for key, enum_value in field.type_.__members__.items()
         ]
-        input_control = pc.select(
-            options=options,
+        input_control = Select.create(
+            *options,
             value=value.to(str) | "",
             on_change=on_change,
             placeholder=repr(field.type_),
+            **kwargs,
         )
     elif issubclass(field.type_, bool):
         input_control = pc.checkbox(
