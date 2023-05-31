@@ -8,7 +8,7 @@ import typing as t
 import pynecone as pc
 import sqlmodel
 
-from .auth_models import AuthSession, User
+from .auth_models import pca_AuthSession, pca_User
 from .persistent_token import PersistentToken
 from .utils import (
     add_computed_var,
@@ -55,7 +55,7 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     def do_logout(self):
         with pc.session() as session:
             for auth_session in session.exec(
-                AuthSession.select.where(AuthSession.session_id == self.current_token)
+                pca_AuthSession.select.where(pca_AuthSession.session_id == self.current_token)
             ).all():
                 session.delete(auth_session)
             session.commit()
@@ -73,7 +73,7 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
         do_logout(self)
         with pc.session() as session:
             session.add(
-                AuthSession(
+                pca_AuthSession(
                     user_id=user_id,
                     session_id=self.current_token,
                     expiration=datetime.datetime.now(datetime.timezone.utc)
@@ -96,9 +96,9 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     def authenticated_user_id(self) -> int:
         with pc.session() as session:
             s = session.exec(
-                AuthSession.select.where(
-                    AuthSession.session_id == self.current_token,
-                    AuthSession.expiration
+                pca_AuthSession.select.where(
+                    pca_AuthSession.session_id == self.current_token,
+                    pca_AuthSession.expiration
                     >= datetime.datetime.now(datetime.timezone.utc),
                 ),
             ).first()
@@ -117,7 +117,7 @@ def LoginStateFor(State: t.Type[pc.State]) -> t.Type[pc.State]:
     Create a "LoginState" as a substate of the given state class.
 
     The LoginState provides fields for username and password, and an event handler, on_submit,
-    which checks the username and password against the User model defined in auth_models.
+    which checks the username and password against the pca_User model defined in auth_models.
 
     If no users exist in the database, the first user to login in will be created as an admin user.
 
@@ -129,8 +129,8 @@ def LoginStateFor(State: t.Type[pc.State]) -> t.Type[pc.State]:
         session: sqlmodel.Session,
         username: str,
         password: str,
-    ) -> User:
-        user = User()
+    ) -> pca_User:
+        user = pca_User()
         user.username = username
         user.password_hash = password
         user.enabled = True
@@ -154,11 +154,11 @@ def LoginStateFor(State: t.Type[pc.State]) -> t.Type[pc.State]:
                 self.error_message = ""
                 with pc.session() as session:
                     user = session.exec(
-                        User.select.where(User.username == self.username)
+                        pca_User.select.where(pca_User.username == self.username)
                     ).one_or_none()
                     if user is None:
                         # if this is the first time logging in, create the user and make them admin
-                        if session.exec(User.select.limit(1)).one_or_none() is None:
+                        if session.exec(pca_User.select.limit(1)).one_or_none() is None:
                             user = _create_first_admin_user(
                                 session,
                                 self.username,
@@ -183,7 +183,7 @@ def LoginStateFor(State: t.Type[pc.State]) -> t.Type[pc.State]:
 
 def default_login_component(State: t.Type[pc.State]) -> pc.Component:
     """
-    Handle local User model logins.
+    Handle local pca_User model logins.
 
     Args:
         State: the state class for the app

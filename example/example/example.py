@@ -10,7 +10,7 @@ import sqlalchemy
 from sqlmodel import col, or_
 
 from pynecone_admin import auth, crud
-from pynecone_admin.auth_models import AuthSession, User
+from pynecone_admin.auth_models import pca_AuthSession, pca_User
 
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ Stuff.__pynecone_admin_fields__ = [f for f in Stuff.__fields__ if f != "hidden"]
 @auth.authenticated_user_id
 class State(pc.State):
     @pc.cached_var
-    def authenticated_user(self) -> User:
+    def authenticated_user(self) -> pca_User:
         if self.authenticated_user_id >= 0:
             with pc.session() as session:
                 logger.debug(
@@ -100,11 +100,11 @@ class State(pc.State):
                     + f" Lookup authenticated_user_id: {self.authenticated_user_id}"
                 )
                 user = session.exec(
-                    User.select.where(User.id == self.authenticated_user_id)
+                    pca_User.select.where(pca_User.id == self.authenticated_user_id)
                 ).one_or_none()
                 if user:
                     return user
-        return User()
+        return pca_User()
 
 
 def index() -> pc.Component:
@@ -138,7 +138,7 @@ app.add_page(index)
 app.add_page(protected, route="/protected")
 crud.add_crud_routes(
     app,
-    [AuthSession, User, Hero, Stuff],
+    [pca_AuthSession, pca_User, Hero, Stuff],
     # login and access control are optional
     login_component=auth.default_login_component,
     can_access_resource=lambda state: state.authenticated_user.admin,

@@ -1,6 +1,5 @@
-handle date types
-displayed columns hook
-mark required fields
+a real subclass to hold all of the functions, to allow downstreamers
+to override small parts of functionality
 
 alternative primary keys
 

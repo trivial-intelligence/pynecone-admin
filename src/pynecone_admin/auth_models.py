@@ -8,7 +8,7 @@ from sqlmodel import Column, DateTime, Field, func
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-class User(pc.Model, table=True):
+class pca_User(pc.Model, table=True):
     """A local User model with bcrypt password hashing."""
 
     username: str = Field(unique=True, nullable=False, index=True)
@@ -32,7 +32,7 @@ class User(pc.Model, table=True):
     __pynecone_admin_save_object_hook__ = do_hash_password
 
 
-class AuthSession(pc.Model, table=True):
+class pca_AuthSession(pc.Model, table=True):
     """Correlate a session_id with an arbitrary user_id."""
 
     user_id: int = Field(index=True, nullable=False)
