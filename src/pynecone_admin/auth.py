@@ -1,3 +1,4 @@
+"""Handle authentication in a pynecone app."""
 from __future__ import annotations
 
 import datetime
@@ -24,7 +25,22 @@ DEFAULT_AUTH_SESSION_EXPIRATION_DELTA = datetime.timedelta(days=7)
 
 
 def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
-    if getattr(State, "persistent_token", None) is not None:
+    """
+    Enable persistent authenticated session tracking for the State.
+
+    May be applied as a decorator on the State class definition.
+
+    * Add `persistent_token` str var that is updated on all pages using the
+      `@login_required()` decorator
+    * Add `do_logout` event to deauth the current session token
+    * Add backend `_login` function that can only be called from another
+      event handler after securely validating a login, associates the current
+      persistent_token with the given user_id. Must pass state instance
+      when calling `State._login(self, valid_user_id)`
+    * Add `authenticated_user_id` int var associated with the session
+        (`-1` for no authenticated user)
+    """
+    if getattr(State, "authenticated_user_id", None) is not None:
         return State
 
     State.add_var("persistent_token", type_=str, default_value="")
@@ -51,6 +67,8 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
         expiration_delta: datetime.timedelta = DEFAULT_AUTH_SESSION_EXPIRATION_DELTA,
     ):
         if self.authenticated_user_id > -1:
+            return
+        if user_id < 0:
             return
         do_logout(self)
         with pc.session() as session:
@@ -91,32 +109,43 @@ def authenticated_user_id(State: t.Type[pc.State]) -> t.Type[pc.State]:
     return State
 
 
-LOGON_STATE_FOR_STATE = {}
+LOGIN_STATE_FOR_STATE = {}
 
 
-def _create_first_admin_user(
-    session: sqlmodel.Session,
-    username: str,
-    password: str,
-) -> User:
-    user = User()
-    user.username = username
-    user.password_hash = password
-    user.enabled = True
-    user.admin = True
-    user.do_hash_password()
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    logger.warning(f"Created first new admin user: {username}")
-    return user
+def LoginStateFor(State: t.Type[pc.State]) -> t.Type[pc.State]:
+    """
+    Create a "LoginState" as a substate of the given state class.
 
+    The LoginState provides fields for username and password, and an event handler, on_submit,
+    which checks the username and password against the User model defined in auth_models.
 
-def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
-    if State not in LOGON_STATE_FOR_STATE:
+    If no users exist in the database, the first user to login in will be created as an admin user.
+
+    Args:
+        State: the state class to create a substate for (typically, app.state)
+    """
+
+    def _create_first_admin_user(
+        session: sqlmodel.Session,
+        username: str,
+        password: str,
+    ) -> User:
+        user = User()
+        user.username = username
+        user.password_hash = password
+        user.enabled = True
+        user.admin = True
+        user.do_hash_password()
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        logger.warning(f"Created first new admin user: {username}")
+        return user
+
+    if State not in LOGIN_STATE_FOR_STATE:
 
         @fix_local_event_handlers
-        class LogonState(State):
+        class LoginState(State):
             username: str = ""
             password: str = ""
             error_message: str = ""
@@ -148,30 +177,40 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
                     )
                 self.username = self.password = ""
 
-        LOGON_STATE_FOR_STATE[State] = LogonState
-    LogonState = LOGON_STATE_FOR_STATE[State]
+        LOGIN_STATE_FOR_STATE[State] = LoginState
+    return LOGIN_STATE_FOR_STATE[State]
+
+
+def default_login_component(State: t.Type[pc.State]) -> pc.Component:
+    """
+    Handle local User model logins.
+
+    Args:
+        State: the state class for the app
+    """
+    LoginState = LoginStateFor(State)
 
     login_form = pc.form(
         debounce_input(
             pc.input(
                 placeholder="username",
-                value=LogonState.username,
-                on_change=LogonState.set_username,
+                value=LoginState.username,
+                on_change=LoginState.set_username,
             ),
         ),
         debounce_input(
             pc.password(
                 placeholder="password",
-                value=LogonState.password,
-                on_change=LogonState.set_password,
+                value=LoginState.password,
+                on_change=LoginState.set_password,
             ),
         ),
-        pc.button("Logon", type_="submit"),
-        on_submit=LogonState.on_submit,
+        pc.button("Login", type_="submit"),
+        on_submit=LoginState.on_submit,
     )
 
     return pc.cond(
-        LogonState.is_hydrated == False,
+        LoginState.is_hydrated == False,
         pc.vstack(
             pc.text("Connecting to Backend"),
             pc.spinner(),
@@ -179,8 +218,8 @@ def default_logon_component(State: t.Type[pc.State]) -> pc.Component:
         ),
         pc.vstack(
             pc.cond(  # conditionally show error messages
-                LogonState.error_message != "",
-                pc.text(LogonState.error_message),
+                LoginState.error_message != "",
+                pc.text(LoginState.error_message),
             ),
             login_form,
             padding_top="10vh",
@@ -192,14 +231,24 @@ def login_required(
     State: t.Type[pc.State],
     login_component: t.Callable[[t.Type[pc.State]], pc.Component] | None = None,
 ) -> pc.Component:
+    """
+    Require login to access a page.
+
+    May be used as a decorator on a page function.
+
+    Args:
+        State: the state class for the app (typically app.state)
+        login_component: function that will render a login form (and the state necessary to drive it).
+            Default will use `default_login_component`.
+
+    The login component must implement some mechanism for calling `State._login(self, user_id)`
+    to create a session for the user.
+    """
     if not hasattr(State, "authenticated_user_id"):
-        raise TypeError(
-            f"{State} should have 'authenticated_user_id' var, did you use "
-            "@pynecone_admin.auth.authenticated_user_id decorator on the app state?"
-        )
+        authenticated_user_id(State)
 
     if login_component is None:
-        login_component = default_logon_component
+        login_component = default_login_component
 
     def comp(original_component) -> pc.Component:
         return pc.fragment(
